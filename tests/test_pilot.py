@@ -200,3 +200,35 @@ def test_h7_eligibility():
     evf = dict.fromkeys(MUTANTS[EVENT], True) | {"e_ceo": False, "e_low_lefty": False}
     got = pilot.h7_eligible(ev, {"handoff_format": "structured", "facts": evf})
     assert "e_ceo" in got and "e_low_lefty" not in got
+
+
+def test_strip_self_tests_removes_bundled_tests_and_self_import():
+    from agent_telephone.endpoint import strip_self_tests
+    code = (
+        "import logging\nfrom datetime import datetime\n\ndef plan_reminders(a, now):\n    return []\n\n"
+        "import pytest\nfrom reminders import plan_reminders\n\n@pytest.fixture\ndef appt():\n    return {}\n\n"
+        "def test_empty():\n    assert plan_reminders([], None) == []\n\nclass TestX:\n    pass\n\n"
+        "if __name__ == '__main__':\n    pytest.main()\n"
+        "import unittest\n\nclass ReminderTests(unittest.TestCase):\n    def test_a(self):\n        pass\n"
+    )
+    out, stripped = strip_self_tests(code)
+    assert stripped
+    assert "def plan_reminders" in out and "import logging" in out and "from datetime import datetime" in out
+    for gone in ("from reminders", "test_empty", "TestX", "ReminderTests", "__main__", "def appt"):
+        assert gone not in out
+
+
+def test_strip_self_tests_leaves_clean_code_untouched():
+    from agent_telephone.endpoint import strip_self_tests
+    code = "import json\n\ndef f():\n    return json.dumps({})  # comment kept\n"
+    assert strip_self_tests(code) == (code, False)
+
+
+def test_strip_self_tests_output_imports_cleanly(tmp_path):
+    import subprocess, sys
+    from agent_telephone.endpoint import strip_self_tests
+    code = ("import unittest\nimport pytest\nfrom brennan_reminders.core import plan\n\ndef plan_reminders(a, now):\n"
+            "    return []\n\nclass ReminderTests(unittest.TestCase):\n    def test_a(self):\n        pass\n")
+    out, _ = strip_self_tests(code)
+    (tmp_path / "m.py").write_text(out)
+    assert subprocess.run([sys.executable, "-c", "import m"], cwd=tmp_path).returncode == 0

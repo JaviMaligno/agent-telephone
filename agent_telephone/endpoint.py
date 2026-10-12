@@ -5,10 +5,13 @@
   test tagged with it via `@pytest.mark.facts(...)` passes.
 - `plan_checks` (event): the artifact is parsed as JSON, schema-validated and run through the
   scenario's `CHECKS` (one per fact); untagged `CONSISTENCY` checks are reported apart, unscored.
+  Before running, `strip_self_tests` removes tests the implementer bundled into the artifact
+  (policy decided 2026-10-12 after the pilot, see DESIGN changelog).
 Facts listed in the endpoint's `JUDGE_ONLY` have no endpoint check and are absent from `facts`.
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -35,6 +38,7 @@ class EndpointResult(BaseModel):
     total: int
     facts: dict[str, bool]  # fact id -> endpoint check passed
     error: str | None = None
+    self_tests_stripped: bool = False
     # untagged plan consistency checks (e.g. total within cap); not part of the score
     consistency: dict[str, bool] = {}
 
@@ -110,6 +114,48 @@ def _sandboxed_run(cmd: list[str], workdir: Path, extra_env: dict[str, str], tim
         proc.wait()
 
 
+def _resolvable(mod: str | None, level: int) -> bool:
+    if level or not mod:
+        return False
+    try:
+        return importlib.util.find_spec(mod.split(".")[0]) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _is_self_test(node: ast.stmt) -> bool:
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node.name.startswith("test_") or any("pytest" in ast.unparse(d) for d in node.decorator_list)
+    if isinstance(node, ast.ClassDef):
+        return node.name.startswith("Test") or any("TestCase" in ast.unparse(b) for b in node.bases)
+    if isinstance(node, ast.If):
+        return "__name__" in ast.unparse(node.test)
+    # test-framework imports stay (installed, harmless, and remaining code may reference them);
+    # only imports that cannot resolve go: the artifact importing itself under an imagined name
+    if isinstance(node, ast.Import):
+        return any(not _resolvable(a.name, 0) for a in node.names)
+    if isinstance(node, ast.ImportFrom):
+        return not _resolvable(node.module, node.level)
+    return False
+
+
+def strip_self_tests(code: str) -> tuple[str, bool]:
+    """Drop top-level self-tests the implementer bundled with the module: test_* functions,
+    Test* classes and TestCase subclasses, pytest-decorated helpers, `__main__` blocks and imports
+    that cannot resolve (the artifact importing itself under the file name it imagined). The
+    hidden tests measure the brief, not whether the agent's own tests import. Unparseable code is
+    returned unchanged."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code, False
+    keep = [n for n in tree.body if not _is_self_test(n)]
+    if len(keep) == len(tree.body):
+        return code, False
+    tree.body = keep
+    return ast.unparse(tree) + "\n", True
+
+
 def run_hidden_tests(hidden_dir: Path, artifact: Path, timeout: float = 120) -> EndpointResult:
     mapping = facts_by_test(hidden_dir)
     facts = sorted(set().union(*mapping.values()))
@@ -117,17 +163,20 @@ def run_hidden_tests(hidden_dir: Path, artifact: Path, timeout: float = 120) -> 
         tmp = Path(tmp).resolve()
         shutil.copytree(hidden_dir, tmp / "hidden_tests", ignore=shutil.ignore_patterns("__pycache__"))
         module = tmp / "artifact.py"
-        module.write_text(_strip_fences(artifact.read_text(encoding="utf-8")), encoding="utf-8")
+        code, stripped = strip_self_tests(_strip_fences(artifact.read_text(encoding="utf-8")))
+        module.write_text(code, encoding="utf-8")
         xml = tmp / "junit.xml"
         cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={xml}", "hidden_tests"]
         if not _sandboxed_run(cmd, tmp, {"AGENT_TELEPHONE_ARTIFACT": str(module)}, timeout):
-            return EndpointResult(passed=0, total=len(mapping), facts=dict.fromkeys(facts, False), error="timeout")
+            return EndpointResult(passed=0, total=len(mapping), facts=dict.fromkeys(facts, False), error="timeout",
+                                  self_tests_stripped=stripped)
         if not xml.exists():
-            return EndpointResult(passed=0, total=len(mapping), facts=dict.fromkeys(facts, False), error="no junit xml")
+            return EndpointResult(passed=0, total=len(mapping), facts=dict.fromkeys(facts, False), error="no junit xml",
+                                  self_tests_stripped=stripped)
         results = {tc.get("name"): len(tc) == 0 for tc in ET.parse(xml).iter("testcase")}
     ok = {t: results.get(t, False) for t in mapping}  # a test that never ran counts as failed
     per_fact = {f: all(ok[t] for t, fs in mapping.items() if f in fs) for f in facts}
-    return EndpointResult(passed=sum(ok.values()), total=len(mapping), facts=per_fact)
+    return EndpointResult(passed=sum(ok.values()), total=len(mapping), facts=per_fact, self_tests_stripped=stripped)
 
 
 def run_plan_checks(checks_dir: Path, artifact: Path) -> EndpointResult:

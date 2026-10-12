@@ -235,3 +235,16 @@ Scoring stack:
   at the same time of day (any day-count convention gives 15/10 days); the punct wrong patterns of
   event_2/event_3 no longer count correct paraphrases ("when more than 25", "not to be streamed").
   Real spans from the audit are regression fixtures in `tests/test_real_spans.py`.
+- 2026-10-12 — **Endpoint policy (decided after seeing pilot data):** implementers sometimes bundle their
+  own tests into the artifact; when those import the module under an imagined file name, the whole
+  artifact fails to import and every hidden test fails (3 software pilot runs scored 0/18 for that
+  reason alone). `endpoint.strip_self_tests` now removes, at top level, `test_*` functions, `Test*` /
+  `TestCase` classes, pytest-decorated helpers, `__main__` blocks and imports that cannot resolve,
+  before the hidden tests run. Rationale: the hidden tests measure whether the brief survived, not the
+  packaging of the agent's own tests. Each endpoint row records `self_tests_stripped`; results are
+  reported with and without this policy. Software pilot endpoint means moved from 0.889/0.806
+  (haiku/sonnet) to 0.975/0.972.
+- 2026-10-12 — **No human labels.** The blind 150-item sheet is labelled by an independent model
+  annotator and disagreements with the judge are adjudicated by a third model; agreement is reported
+  as model-anchored, not human-anchored.
+
