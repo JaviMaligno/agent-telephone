@@ -88,7 +88,7 @@ CHECKS: dict[str, Callable[[dict], bool]] = {
     "e_cond_coach": lambda p: p["transport"]["coaches"] == 1 and p["transport"]["second_coach_if_over"] == 90,
     "e_cond_rain": lambda p: p["contingency"]["rain"]["threshold_percent"] == 40
     and "long gallery" in norm(p["contingency"]["rain"]["location"] or ""),
-    "e_budget": lambda p: p["budget"]["cap_eur"] == 18500 and 0 < p["budget"]["total_eur"] <= 18500,
+    "e_budget": lambda p: p["budget"]["cap_eur"] == 18500,  # the fact is the cap; the total is checked below
     "e_priority_band": _band_before_coaches,
     "e_priority_keynote": lambda p: p["contingency"]["keynote_overrun"] == "delay_dinner",
     "e_low_lefty": lambda p: norm("Fionnuala Ó Dálaigh") in norm(p["seating"]["top_table"][0]),
@@ -104,3 +104,23 @@ def run_checks(plan: Any) -> dict[str, bool]:
         except (KeyError, TypeError, IndexError, AttributeError):
             results[fact_id] = False
     return results
+
+
+def _total_within_cap(p: dict):
+    total = p["budget"].get("total_eur")
+    return None if not total else total <= p["budget"]["cap_eur"]  # no quotes yet (0 / null): skipped
+
+
+# Untagged consistency checks (no fact): None = not applicable. Not part of the endpoint score.
+CONSISTENCY: dict[str, Callable[[dict], bool | None]] = {"budget_total_within_cap": _total_within_cap}
+
+
+def run_consistency(plan: Any) -> dict[str, bool]:
+    out = {}
+    for name, check in CONSISTENCY.items():
+        try:
+            if (ok := check(plan)) is not None:
+                out[name] = bool(ok)
+        except (KeyError, TypeError, IndexError, AttributeError):
+            out[name] = False
+    return out

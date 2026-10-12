@@ -1,0 +1,20 @@
+# Phase 0 only: how the FakeBackend's endpoint author "implements what it received" (see the
+# software_pilot twin). Each mutation is checked by tests/test_pilot.py to fail only the hidden
+# test(s) tagged with its fact. Replacements apply in file order and do not overlap.
+reference: reference_solution/purge.py
+mutants:
+  f_entry: {replace: ["def plan_purge(", "def plan_cleanup("]}
+  f_seen_field: {replace: ['acc["last_seen_at"]', 'acc["last_login"]']}
+  f_inactive: {replace: ["INACTIVE_DAYS = 730", "INACTIVE_DAYS = 365"]}
+  f_closed: {replace: ["CLOSED_DAYS = 30", "CLOSED_DAYS = 90"]}
+  f_warn: {replace: ["WARN_DAYS = 14", "WARN_DAYS = 7"]}
+  f_cond_warn: {replace: [' and acc.get("closed_by") != "member"', ""]}
+  f_cond_invoice: {replace: ['if acc.get("unpaid_invoices"):', "if False:"]}
+  f_no_hold: {replace: ['if acc.get("litigation_hold"):', "if False:"]}
+  f_no_staff: {replace: ['STAFF_DOMAIN = "@tidewater-klatring.no"', 'STAFF_DOMAIN = "@nowhere.invalid"']}
+  f_no_email: {replace: ['{"account_id": acc["id"],', '{"account_id": acc["id"], "email": acc["email"],']}
+  f_batch: {replace: ["MAX_DELETIONS = 200", "MAX_DELETIONS = 2000"]}
+  f_priority_closed: {replace: ['d[0].get("closed_at") is None)', 'd[0].get("closed_at") is not None)']}
+  f_dpo: {replace: ['DPO = "Þórdís Sveinbjörnsdóttir"', 'DPO = "Thordis Sveinbjornsdottir"']}
+  f_low_sorted: {replace: ['return sorted(actions, key=lambda a: a["account_id"])', "return actions[::-1]"]}
+  f_low_iso: {replace: ['"due": due.isoformat(),', '"due": due,']}

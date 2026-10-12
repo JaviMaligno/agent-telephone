@@ -4,7 +4,7 @@ import pytest
 from agent_telephone.schema import Scenario
 from agent_telephone.scoring.deterministic import DeterministicScorer, canon, words_to_int
 
-from .test_pilot_scenarios import EVENT, SOFTWARE
+from .test_pilot_scenarios import EVENT, SCENARIOS, SOFTWARE
 
 SW, EV = DeterministicScorer(Scenario.load(SOFTWARE)), DeterministicScorer(Scenario.load(EVENT))
 
@@ -123,3 +123,51 @@ def test_also_judge_overrides_a_preserved_anchor():
     rows, _ = score_messages({sc.id: sc}, [msg], Judge(InvertingJudge(), "fake-judge", ["fake"]))
     got = {r.fact_id: r.label for r in rows}
     assert got["f_optout_field"] == "inverted" and len(rows) == len(sc.facts)
+
+
+# --- the other scenarios: number/name slots on realistic paraphrases ------------------------
+
+SCORERS = {n: DeterministicScorer(Scenario.load(SCENARIOS / n)) for n in ("software_2", "software_3", "event_2", "event_3")}
+
+
+@pytest.mark.parametrize("sid, text, fid, label", [
+    ("software_2", "30-day billing periods, whatever the month.", "f_period", "preserved"),
+    ("software_2", "Billing period: thirteen days.", "f_period", "distorted"),  # the homophone variant
+    ("software_2", "Skip lines below 50c.", "f_min", "preserved"),
+    ("software_2", "Drop any line under 30 cents.", "f_min", "distorted"),
+    ("software_2", "VAT: 21% on charges.", "f_vat_rate", "preserved"),
+    ("software_2", "Charges carry 20% VAT.", "f_vat_rate", "distorted"),
+    ("software_2", "Descriptions max 80 chars.", "f_desc_len", "preserved"),
+    ("software_2", "Descriptions up to 120 characters.", "f_desc_len", "distorted"),
+    ("software_2", "Credits are approved by Nguyen Thi Phuong Thao.", "f_approver", "distorted"),
+    ("software_2", "Credits over €500 are approved by Ramón Etxeberria-Goñi.", "f_approver", "lost"),  # ignored slot value
+    ("software_3", "Delete accounts inactive for 730 days.", "f_inactive", "preserved"),
+    ("software_3", "Delete accounts after 2 years (365 days) of inactivity.", "f_inactive", "distorted"),
+    ("software_3", "Closed accounts: delete 30 days after closure.", "f_closed", "preserved"),
+    ("software_3", "Closed accounts are deleted 60 days after closed_at.", "f_closed", "distorted"),
+    ("software_3", "Warn members 14 days before deletion.", "f_warn", "preserved"),
+    ("software_3", "Send a warning forty days ahead.", "f_warn", "distorted"),
+    ("software_3", "At most 500 deletions per run.", "f_batch", "distorted"),
+    ("software_3", "Approved by the DPO, Thordis Sveinbjornsdottir.", "f_dpo", "distorted"),
+    ("event_2", "Date: 12/09/2026.", "w_date", "preserved"),
+    ("event_2", "Wedding on 13 September 2026.", "w_date", "distorted"),
+    ("event_2", "ninety-four guests", "w_guests", "distorted"),
+    ("event_2", "Finnish cards if more than 25 guests confirm.", "w_guests", "lost"),  # 25 belongs to another fact
+    ("event_2", "Ceremony at 4pm in the chapel.", "w_ceremony", "preserved"),
+    ("event_2", "Last shuttle 1:30am.", "w_shuttle", "preserved"),
+    ("event_2", "Dietary:\n- Vegetarian: 11\n- Children: 4", "w_diet", "preserved"),
+    ("event_2", "11 vegetarians and for children's meals", "w_diet", "distorted"),  # the homophone variant
+    ("event_2", "Budget: EUR 40 000.", "w_budget", "distorted"),
+    ("event_2", "Interpreter: Paivikki Jarvenpaa.", "w_interpreter", "distorted"),
+    ("event_3", "Symposium on 9 March 2027.", "c_date", "preserved"),
+    ("event_3", "Overflow room only if more than 260 delegates register.", "c_delegates", "lost"),
+    ("event_3", "to hundred and thirty-eight delegates", "c_delegates", "distorted"),  # the homophone variant
+    ("event_3", "Keynote at 9:15am.", "c_keynote_time", "preserved"),
+    ("event_3", "Posters from 3:30pm.", "c_posters", "preserved"),
+    ("event_3", "Lunches:\n- Vegetarian: 31\n- Halal: 9\n- Gluten-free: 4", "c_lunch", "preserved"),
+    ("event_3", "31 vegetarian, 4 halal and 9 gluten-free lunches.", "c_lunch", "distorted"),
+    ("event_3", "Budget cap €31,750 incl. VAT.", "c_budget", "preserved"),
+    ("event_3", "AV contact: Bartlomiej Zolkiewski.", "c_av_contact", "distorted"),
+])
+def test_other_scenarios_numbers_and_names(sid, text, fid, label):
+    assert lab(SCORERS[sid], text, fid) == label

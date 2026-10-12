@@ -26,3 +26,11 @@ models:
     output: 0.50
     cache_write: 0.10
     cache_read: 0.01
+  # Judge candidate for the Claude Code runs (cross-family), Azure deployment behind the company gateway.
+  # fill from Azure price list. While null, BudgetGuard refuses every call and score_real --dry-run
+  # reports tokens only.
+  gpt-5.6-sol-tst:
+    input: null
+    output: null
+    cache_write: null
+    cache_read: null

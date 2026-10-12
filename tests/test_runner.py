@@ -68,7 +68,9 @@ def test_paid_backend_refused_with_null_prices(tmp_path, scenario):
 
     key = tmp_path / "key"
     key.write_text("sk-secret")
-    gw = GatewayBackend("http://127.0.0.1:9", key, BudgetGuard(400, tmp_path / "l.ledger.json", init_ledger=True))
+    gw = GatewayBackend("http://127.0.0.1:9", key,  # no price for the model: independent of config/prices.yaml
+                        BudgetGuard(400, tmp_path / "l.ledger.json", prices={"gpt-6-luna": {"input": None, "output": None}},
+                                    init_ledger=True))
     assert "sk-secret" not in repr(gw)
     with pytest.raises(BudgetExceeded):  # refused before any network I/O
         runner_api.run(scenario, _cond(model="gpt-6-luna"), gw, tmp_path / "log.jsonl")

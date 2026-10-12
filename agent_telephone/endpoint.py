@@ -4,7 +4,7 @@
   dir and run in a sandboxed subprocess (see `_sandboxed_run`), results read from junit XML. A fact passes when every
   test tagged with it via `@pytest.mark.facts(...)` passes.
 - `plan_checks` (event): the artifact is parsed as JSON, schema-validated and run through the
-  scenario's `CHECKS` (one per fact).
+  scenario's `CHECKS` (one per fact); untagged `CONSISTENCY` checks are reported apart, unscored.
 Facts listed in the endpoint's `JUDGE_ONLY` have no endpoint check and are absent from `facts`.
 """
 from __future__ import annotations
@@ -35,6 +35,8 @@ class EndpointResult(BaseModel):
     total: int
     facts: dict[str, bool]  # fact id -> endpoint check passed
     error: str | None = None
+    # untagged plan consistency checks (e.g. total within cap); not part of the score
+    consistency: dict[str, bool] = {}
 
     @property
     def score(self) -> float:
@@ -137,7 +139,8 @@ def run_plan_checks(checks_dir: Path, artifact: Path) -> EndpointResult:
         return EndpointResult(passed=0, total=total, facts=dict.fromkeys(checks.CHECKS, False), error=f"not JSON: {e}")
     results = checks.run_checks(plan)
     errors = checks.validate(plan)
-    return EndpointResult(passed=sum(results.values()), total=total, facts=results,
+    consistency = checks.run_consistency(plan) if hasattr(checks, "run_consistency") else {}
+    return EndpointResult(passed=sum(results.values()), total=total, facts=results, consistency=consistency,
                           error=f"{len(errors)} schema error(s): {errors[0]}" if errors else None)
 
 

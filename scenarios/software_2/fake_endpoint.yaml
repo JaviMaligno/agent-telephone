@@ -1,0 +1,23 @@
+# Phase 0 only: how the FakeBackend's endpoint author "implements what it received" (see the
+# software_pilot twin). Each mutation is checked by tests/test_pilot.py to fail only the hidden
+# test(s) tagged with its fact. Replacements apply in file order and do not overlap.
+reference: reference_solution/billing.py
+mutants:
+  f_entry: {replace: ["def prorate_seats(", "def prorate_plan("]}
+  f_seat_field: {replace: ['subscription["billable_seats"]', 'subscription["seats"]']}
+  f_period: {replace: ["PERIOD_DAYS = 30", "PERIOD_DAYS = 31"]}
+  f_cond_downgrade: {replace: ["if new < old:", "if False:"]}
+  f_no_round_us: {replace: ["-(-old * days // PERIOD_DAYS), new * days // PERIOD_DAYS",
+                            "_half_up(old * days, PERIOD_DAYS), _half_up(new * days, PERIOD_DAYS)"]}
+  f_min: {replace: ["MIN_CENTS = 50", "MIN_CENTS = 5"]}
+  f_vat_rate: {replace: ["VAT_RATE = 21", "VAT_RATE = 20"]}
+  f_cond_vat: {replace: ['0 if subscription.get("vat_id") else _half_up', "_half_up"]}
+  f_no_vat_credit: {replace: ['"vat_cents": 0,', '"vat_cents": _half_up(credit * VAT_RATE, 100),']}
+  f_no_trial: {replace: ['== "trialing"', '== "trial"']}
+  f_desc_len: {replace: ["DESC_MAX = 80", "DESC_MAX = 200"]}
+  f_priority_date: {replace: ['seats until {end:%Y-%m-%d}"', 'seats"']}
+  f_approver: {replace: ['APPROVER = "Nguyễn Thị Phương Thảo"', 'APPROVER = "Win Tee Fung Tao"']}
+  f_approver_big: {replace: ['"Ramón Etxeberria-Goñi"', '"Ramon Etxeberria-Goni"']}
+  f_cond_big: {replace: ["APPROVER_BIG if credit > BIG_CREDIT_CENTS else APPROVER", "APPROVER"]}
+  f_low_order: {replace: ["for line in lines if", "for line in lines[::-1] if"]}
+  f_low_int: {replace: ['"amount_cents": int(credit)', '"amount_cents": credit / 1']}

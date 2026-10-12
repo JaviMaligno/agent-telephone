@@ -1,0 +1,20 @@
+{
+  "event_name": "European Glaciology Network one-day symposium",
+  "date": "2027-03-09",
+  "delegate_count": 238,
+  "venue": {"name": "Aula Leopoldina, University of Wrocław", "coffee_location": "foyer"},
+  "schedule": {"keynote_start": "09:15", "panel_start": "14:00", "poster_session_start": "15:30", "close": "18:00"},
+  "speakers": [
+    {"name": "Prof. Chiamaka Nwachukwu-Eze", "role": "keynote speaker"},
+    {"name": "Dr Zsófia Szőke-Gyöngyösi", "role": "morning session chair"}
+  ],
+  "av": {"contact": "Bartłomiej Żółkiewski", "aspect_ratio": "4:3",
+         "recorded_sessions": ["keynote", "morning session"], "streamed_sessions": ["keynote", "morning session"],
+         "microphones": [{"speaker": "Prof. Chiamaka Nwachukwu-Eze", "type": "lectern"},
+                         {"speaker": "Dr Zsófia Szőke-Gyöngyösi", "type": "lapel"}]},
+  "photography": {"flash_allowed": false},
+  "catering": {"lunch_counts": {"vegetarian": 31, "halal": 9, "gluten_free": 4}, "coffee_breaks": ["10:45", "15:00"]},
+  "rooms": {"overflow_booked": false, "book_overflow_if_over": 260},
+  "contingency": {"rail_strike_delay_minutes": 45, "talk_overrun": "shorten_coffee"},
+  "budget": {"cap_eur": 31750, "total_eur": 30980, "cut_order": ["swag", "dinner", "printed_programme", "captioning"]}
+}

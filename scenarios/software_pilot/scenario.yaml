@@ -33,12 +33,15 @@ facts:
      check: {kind: exact, pattern: optout_sms_v2, also_judge: true}}
   - {id: f_rat_optout, type: rationale, text: "because the old field went stale after the March CRM migration",
      check: {kind: judge}}
+  # Anchored on the offset (48 h / 2 h), not on the ordinal: design docs write "starts_at minus 48
+  # hours", "t-48h", `timedelta(hours=48)`. The 48 of "the 48-hour point" (f_cond_late) and of the
+  # priority sentence (f_priority_2h) is excluded; a wrong value counts only next to first/second.
   - {id: f_first, type: number, text: "Send the first reminder 48 hours before the appointment",
-     check: {kind: regex, pattern: '\bfirst\b[^.\n;]{0,30}?\b48[- ]?(?:hours?|hrs?|h)\b|\b48[- ]?(?:hours?|hrs?|h)\b[^.\n;]{0,20}?\bfirst\b',
-            slot: '\bfirst\b[^.\n;\d]{0,30}?(?P<value>\d+)[- ]?(?:hours?|hrs?|h)\b'}}
+     check: {kind: regex, pattern: '(?<!than the )(?<!over the )\b48[- ]?(?:hours?|hrs?|h)\b(?![- ]?(?:point|mark)\b)(?![^.\n;]{0,25}?\b(?:matters|wins|priority|more important)\b)',
+            slot: '(?<![^\W_])first(?:[_ \t]+(?:reminder|one|offset|lead))?[ \t:=]+(?:at[ \t]+|is[ \t]+)?(?P<value>\d+)[- ]?(?:hours?|hrs?|h)\b|(?P<value2>\b\d+)[- ]?(?:hours?|hrs?|h)[ \t]+first\b'}}
   - {id: f_second, type: number, text: "the second one two hours before",
-     check: {kind: regex, pattern: '\bsecond\b[^.\n;]{0,25}?\b2[- ]?(?:hours?|hrs?|h)\b',
-            slot: '\bsecond\b(?:[ \t]+(?:one|reminder))?[ \t:]+(?P<value>[^.\n;]{1,20}?)[ \t]*(?:hours?|hrs?|h)\b'}}
+     check: {kind: regex, pattern: '(?<!than the )(?<!over the )\b2[- ]?(?:hours?|hrs?|h)\b(?![- ]?(?:point|mark)\b)(?![^.\n;]{0,25}?\b(?:matters|wins|priority|more important)\b)',
+            slot: '(?<![^\W_])second(?:[_ \t]+(?:one|reminder|offset|lead))?[ \t:=]+(?P<value>[^.\n;]{1,20}?)[ \t]*(?:hours?|hrs?|h)\b|(?<![^\W_])reminder[ \t]+2\b[ \t:=]+(?P<value2>[^.\n;]{1,20}?)[ \t]*(?:hours?|hrs?|h)\b'}}
   - {id: f_cond_late, type: conditional,
      text: "If the 48-hour point has already passed when we run, send the first one immediately, at `now`, instead.",
      check: {kind: judge}}
@@ -57,9 +60,9 @@ facts:
   - {id: f_quiet, type: number,
      text: "Nothing goes out between 21:00 and 08:00; move anything in that window back to the 20:00 just before it.",
      # window bounds are matched independently (any order/line); the move-back rule is judged
-     check: {kind: regex, pattern: '21:00[^\n]*08:00', also_judge: true,
-            slot: ['\b(?:between|after|from|window|quiet hours?)\b[^\d\n]{0,12}?(?P<value>\d{2}:\d{2})|(?P<value2>\d{2}:\d{2})[ \t]*(?:-|–|to|and|until|till)[ \t]*\d{2}:\d{2}',
-                   '\b(?:and|to|until|till|before)[ \t]+(?P<value>\d{2}:\d{2})|(?:-|–)[ \t]*(?P<value2>\d{2}:\d{2})']}}
+     check: {kind: regex, pattern: '21:00[^\n]*08:00|08:00 <=?[^\n]*hour <=? 21:00', also_judge: true,
+            slot: ['\b(?:between|after|from|window|quiet hours?)\b[^\d\n]{0,12}?(?P<value>\d{2}:\d{2})|(?P<value2>\d{2}:\d{2})[ \t]*(?:-|–|to|and|until|till)[ \t]*\d{2}:\d{2}|quiet[_ \t]*(?:start|from|begins?)\w*\W{0,6}(?P<value3>\d{2}:\d{2})',
+                   '\b(?:and|to|until|till|before)[ \t]+(?P<value>\d{2}:\d{2})|(?:-|–)[ \t]*(?P<value2>\d{2}:\d{2})|quiet[_ \t]*(?:end|until|to)\w*\W{0,6}(?P<value3>\d{2}:\d{2})']}}
   - {id: f_no_cancelled, type: negation, text: "No reminders at all for appointments whose status is cancelled.",
      check: {kind: judge}}
   - {id: f_no_email_log, type: negation, text: "Do not log the customer's email address anywhere",
@@ -119,7 +122,7 @@ noise:
     affected_fact_ids: [f_signer]
     wrong_reading: Chevonne Nee Divver
     wrong_pattern: '\bChevonne\b|\bNee Divver\b'
-    wrong_context: '\bsign'
+    wrong_context: '(?<![^\W_])sig(?:n|_)|\b(?:ends?|ending)[ _]?with\b|\bdefault\b|\bsuffix\b|\bcountry\b'
     repairable: false
     brief: |-
       Right, this is for Brennan Opticians, the appointment reminders. I need a Python module with one entry point, `plan_reminders(appointments, now)`. It takes a list of appointment dicts and the current time and returns the reminders to send, each a dict with `appointment_id`, `channel` ("sms" or "email"), `send_at` and `text`. Each appointment has `id`, `customer_name`, `email`, `phone`, `country`, `status`, `starts_at` and the opt-out flag, and all datetimes are timezone-aware. Each text says the appointment date and the time as HH:MM.

@@ -8,8 +8,10 @@ import yaml
 from agent_telephone import endpoint, pilot
 from agent_telephone.schema import Scenario
 
+from .test_pilot_scenarios import ALL, EVENT_ALL, SOFTWARE_ALL
+
 SOFTWARE, EVENT = pilot.PILOTS
-MUTANTS = {d: yaml.safe_load((d / "fake_endpoint.yaml").read_text(encoding="utf-8"))["mutants"] for d in pilot.PILOTS}
+MUTANTS = {d: yaml.safe_load((d / "fake_endpoint.yaml").read_text(encoding="utf-8"))["mutants"] for d in ALL}
 
 
 def _evaluate(sdir: Path, text: str, tmp_path: Path, timeout: float = 120) -> endpoint.EndpointResult:
@@ -19,19 +21,19 @@ def _evaluate(sdir: Path, text: str, tmp_path: Path, timeout: float = 120) -> en
     return endpoint.evaluate(sc, sdir, art, timeout)
 
 
-@pytest.mark.parametrize("sdir", pilot.PILOTS, ids=lambda p: p.name)
+@pytest.mark.parametrize("sdir", ALL, ids=lambda p: p.name)
 def test_reference_artifact_passes_everything(sdir, tmp_path):
     res = _evaluate(sdir, pilot.fake_artifact(sdir, set()), tmp_path)
     assert res.passed == res.total and all(res.facts.values()) and res.error is None
 
 
-@pytest.mark.parametrize("sdir", pilot.PILOTS, ids=lambda p: p.name)
+@pytest.mark.parametrize("sdir", ALL, ids=lambda p: p.name)
 def test_mutants_cover_every_endpoint_fact(sdir, tmp_path):
     checked = set(_evaluate(sdir, pilot.fake_artifact(sdir, set()), tmp_path).facts)
     assert set(MUTANTS[sdir]) == checked
 
 
-@pytest.mark.parametrize("sdir, fact_id", [(d, f) for d in pilot.PILOTS for f in MUTANTS[d]],
+@pytest.mark.parametrize("sdir, fact_id", [(d, f) for d in ALL for f in MUTANTS[d]],
                          ids=lambda x: x.name if isinstance(x, Path) else x)
 def test_each_mutant_fails_its_fact(sdir, fact_id, tmp_path):
     text = pilot.fake_artifact(sdir, {fact_id})
@@ -62,10 +64,13 @@ def test_fake_pilot_end_to_end(tmp_path):
     assert (tmp_path / "analysis_note" / "survival_by_distance.csv").exists()
 
 
-def test_fake_endpoint_reflects_ground_truth(tmp_path):
+# software_pilot is left out: there, combined mutants can mask each other (a channel mutant leaves no
+# SMS for the "time kept" test to inspect), so a broken fact may pass. The other scenarios hold.
+@pytest.mark.parametrize("sdir", [d for d in ALL if d != SOFTWARE], ids=lambda p: p.name)
+def test_fake_endpoint_reflects_ground_truth(sdir, tmp_path):
     """A fact that reached the endpoint author non-preserved fails its endpoint check."""
-    sc = Scenario.load(EVENT)
-    grid = pilot.run_grid([EVENT], tmp_path)
+    sc = Scenario.load(sdir)
+    grid = pilot.run_grid([sdir], tmp_path)
     for ep in grid["endpoints"]:
         final = grid["truth"][ep["run_id"]][1][-1]
         for fid, ok in ep["facts"].items():
@@ -138,24 +143,26 @@ def _tags(sdir):
     return endpoint.facts_by_test(sdir / "hidden_tests")
 
 
-@pytest.mark.parametrize("fact_id", list(MUTANTS[SOFTWARE]))
-def test_hidden_tests_assert_only_on_tagged_facts(fact_id, tmp_path):
+@pytest.mark.parametrize("sdir, fact_id", [(d, f) for d in SOFTWARE_ALL for f in MUTANTS[d]],
+                         ids=lambda x: x.name if isinstance(x, Path) else x)
+def test_hidden_tests_assert_only_on_tagged_facts(sdir, fact_id, tmp_path):
     """Breaking one fact fails only tests tagged with it (or everything, for a universal fact)."""
     from .test_pilot_scenarios import run_hidden
 
     art = tmp_path / "mutant.py"
-    art.write_text(pilot.fake_artifact(SOFTWARE, {fact_id}), encoding="utf-8")
-    failed = {t for t, ok in run_hidden(art, tmp_path).items() if not ok}
+    art.write_text(pilot.fake_artifact(sdir, {fact_id}), encoding="utf-8")
+    failed = {t for t, ok in run_hidden(art, tmp_path, sdir / "hidden_tests").items() if not ok}
     assert failed, "mutant not caught"
-    if fact_id not in Scenario.load(SOFTWARE).endpoint.universal:
-        tags = _tags(SOFTWARE)
+    if fact_id not in Scenario.load(sdir).endpoint.universal:
+        tags = _tags(sdir)
         assert {t for t in failed if fact_id not in tags[t]} == set()
 
 
-@pytest.mark.parametrize("fact_id", list(MUTANTS[EVENT]))
-def test_plan_checks_assert_only_on_their_fact(fact_id, tmp_path):
-    ep = Scenario.load(EVENT).endpoint
-    res = _evaluate(EVENT, pilot.fake_artifact(EVENT, {fact_id}), tmp_path)
+@pytest.mark.parametrize("sdir, fact_id", [(d, f) for d in EVENT_ALL for f in MUTANTS[d]],
+                         ids=lambda x: x.name if isinstance(x, Path) else x)
+def test_plan_checks_assert_only_on_their_fact(sdir, fact_id, tmp_path):
+    ep = Scenario.load(sdir).endpoint
+    res = _evaluate(sdir, pilot.fake_artifact(sdir, {fact_id}), tmp_path)
     failed = {f for f, ok in res.facts.items() if not ok}
     assert failed - {fact_id} <= {g for g, deps in ep.depends.items() if fact_id in deps}
 
@@ -165,6 +172,22 @@ def test_negations_are_discriminating_or_declared_insensitive():
     assert "Coachline" in ev.role("vendor").instructions  # a lost "do not book Coachline" now changes the plan
     assert "log one" in sw.role("implementer").instructions.lower()  # the email filter is exercised
     assert sw.endpoint.loss_insensitive == ["f_no_both"]
+    sw2, sw3, ev2, ev3 = (Scenario.load(SOFTWARE.parent / n) for n in ("software_2", "software_3", "event_2", "event_3"))
+    assert "credits included" in sw2.role("implementer").instructions  # a lost "credits never carry VAT" shows
+    assert "half-up" in sw2.role("implementer").instructions  # ... and so does a lost "never round in our favour"
+    assert "`email`" in sw3.role("implementer").instructions  # a lost "no email in the actions" shows
+    assert "Lumière Fotografia" in ev2.role("vendor").instructions  # a lost "do not book Lumière" changes the plan
+    assert all(k in ev3.role("vendor").instructions for k in ("livestreams every session", "flash", "back of the"))
+    assert sw2.endpoint.loss_insensitive == ["f_low_order"] and not sw3.endpoint.loss_insensitive
+
+
+@pytest.mark.parametrize("sdir", ALL, ids=lambda p: p.name)
+def test_endpoint_declarations_are_tested_facts(sdir, tmp_path):
+    """universal / depends / loss_insensitive only name facts the endpoint actually checks."""
+    ep = Scenario.load(sdir).endpoint
+    checked = set(MUTANTS[sdir])
+    named = {*ep.universal, *ep.loss_insensitive, *ep.depends, *(f for fs in ep.depends.values() for f in fs)}
+    assert named <= checked
 
 
 def test_h7_eligibility():

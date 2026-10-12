@@ -1,0 +1,190 @@
+id: software_2
+domain: software
+# Fact `text` values are verbatim spans of `brief` (tests enforce it), so the FakeBackend
+# and the deterministic checks can locate them. Endpoint coverage: hidden_tests/.
+brief: |-
+  Hi, Ingrid from Fernhollow Studios here, it's about seat upgrades in our billing. I need a Python module with one entry point, `prorate_seats(subscription, new_plan, changed_at)`. `subscription` is a dict with `id`, `status`, `plan_name`, `seat_price_cents`, `seats`, `billable_seats`, `vat_id` and `period_end`; `new_plan` has `name` and `seat_price_cents`; all datetimes are timezone-aware. It returns the invoice lines, each a dict with `subscription_id`, `kind` ("credit" or "charge"), `amount_cents`, `vat_cents`, `description` and `approved_by` (None on charges). Each description names the plan and gives the period end date as YYYY-MM-DD.
+
+  Bill on the field `billable_seats`, not `seats`, because `seats` still counts deactivated users since the June SSO migration.
+
+  Credit the unused part of the old plan and charge the unused part of the new one. A billing period always counts as 30 days, whatever the month, and the unused part is the days left from the change date to period_end. If the new plan is cheaper than the old one, it's a downgrade: don't prorate it now, return no lines, it applies at renewal.
+
+  Never round in our favour: credits round up to the next cent and charges round down, because the consumer authority in Lisbon fined a competitor for exactly that last year. Skip any line under 50 cents, it costs more to process than it's worth.
+
+  Charges carry VAT at 21%, unless the customer has a `vat_id`, then it's reverse charge and VAT is zero. Credits never carry VAT, finance reverses it separately.
+
+  No proration at all for subscriptions whose status is trialing.
+
+  Descriptions must be at most 80 characters for the invoice PDF. If one is too long, shorten the plan name, but always keep the period end date — the date matters more than the plan name.
+
+  Every credit line is approved by Nguyễn Thị Phương Thảo, our finance controller. If a credit is over €500, Ramón Etxeberria-Goñi has to approve it instead, he signs off the big ones.
+
+  If you have to cut scope, getting the credit right matters more than the VAT.
+
+  Oh, and put the credit before the charge, Dagný's PDF template assumes that order. Amounts are integer cents, never floats, the ledger import chokes on decimals. Ignore the old `legacy_discount` field, Wojciech is removing it.
+
+facts:
+  - {id: f_entry, type: name, text: "`prorate_seats(subscription, new_plan, changed_at)`",
+     check: {kind: exact, pattern: prorate_seats}}
+  # the name anchors the fact; which field wins (polarity) is the judge's call
+  - {id: f_seat_field, type: name, text: "Bill on the field `billable_seats`, not `seats`",
+     check: {kind: exact, pattern: billable_seats, also_judge: true}}
+  - {id: f_rat_seats, type: rationale, text: "because `seats` still counts deactivated users since the June SSO migration",
+     check: {kind: judge}}
+  - {id: f_period, type: number, text: "A billing period always counts as 30 days, whatever the month",
+     check: {kind: regex, pattern: '\b30[- ]?days?\b',
+            slot: '\bperiods?\b[^.\n\d]{0,40}?(?P<value>\d+)[- ]?(?:days?|d)\b|(?P<value2>\b\d+)[- ]?days?\b[^.\n\d]{0,20}?\bperiods?\b'}}
+  - {id: f_cond_downgrade, type: conditional,
+     text: "If the new plan is cheaper than the old one, it's a downgrade: don't prorate it now, return no lines, it applies at renewal.",
+     check: {kind: judge}}
+  - {id: f_no_round_us, type: negation,
+     text: "Never round in our favour: credits round up to the next cent and charges round down",
+     check: {kind: judge}}
+  - {id: f_rat_round, type: rationale, text: "because the consumer authority in Lisbon fined a competitor for exactly that last year",
+     check: {kind: judge}}
+  - {id: f_min, type: number, text: "Skip any line under 50 cents",
+     check: {kind: regex, pattern: '\b50[ \t-]*(?:cents?|c)\b', slot: '(?P<value>\b\d+)[ \t-]*(?:cents?|c)\b'}}
+  - {id: f_vat_rate, type: number, text: "Charges carry VAT at 21%",
+     check: {kind: regex, pattern: '\b21[ \t]*(?:%|percent)',
+            slot: '\bVAT\b[^.\n\d]{0,20}?(?P<value>\d+(?:\.\d+)?)[ \t]*(?:%|percent)|(?P<value2>\b\d+(?:\.\d+)?)[ \t]*(?:%|percent)[ \t]+VAT\b'}}
+  - {id: f_cond_vat, type: conditional,
+     text: "unless the customer has a `vat_id`, then it's reverse charge and VAT is zero",
+     check: {kind: judge}}
+  - {id: f_no_vat_credit, type: negation, text: "Credits never carry VAT",
+     check: {kind: judge}}
+  - {id: f_no_trial, type: negation, text: "No proration at all for subscriptions whose status is trialing.",
+     check: {kind: judge}}
+  - {id: f_desc_len, type: number, text: "Descriptions must be at most 80 characters for the invoice PDF.",
+     check: {kind: regex, pattern: '\b80\b', slot: '(?P<value>\d+)[ \t-]*(?:characters?|chars?)\b'}}
+  - {id: f_priority_date, type: priority,
+     text: "If one is too long, shorten the plan name, but always keep the period end date — the date matters more than the plan name.",
+     check: {kind: judge}}
+  - {id: f_approver, type: name, text: "Every credit line is approved by Nguyễn Thị Phương Thảo, our finance controller.",
+     check: {kind: fuzzy, pattern: Nguyễn Thị Phương Thảo, aliases: [Nguyen Thi Phuong Thao],
+            ignore: [Ramón Etxeberria-Goñi, Ramón Etxeberria, Ramon Etxeberria],
+            slot: '\bapproved?\b(?:[ \t]+(?:it|by))?[ \t:]+(?:is[ \t]+)?(?P<value>(?-i:[A-ZÀ-ÞĀ-ſẠ-Ỹ])[^\W\d_]+(?:[ \t]+(?-i:[A-ZÀ-ÞĀ-ſẠ-Ỹ])[^\W\d_]+){1,3})'}}
+  - {id: f_approver_big, type: name, text: "Ramón Etxeberria-Goñi",
+     check: {kind: fuzzy, pattern: Ramón Etxeberria-Goñi, aliases: [Ramon Etxeberria-Goni]}}
+  - {id: f_cond_big, type: conditional, text: "If a credit is over €500, Ramón Etxeberria-Goñi has to approve it instead",
+     check: {kind: judge}}
+  - {id: f_priority_credit, type: priority, text: "If you have to cut scope, getting the credit right matters more than the VAT.",
+     check: {kind: judge}}
+  - {id: f_low_order, type: low_salience, text: "put the credit before the charge, Dagný's PDF template assumes that order",
+     check: {kind: judge}}
+  - {id: f_low_int, type: low_salience, text: "Amounts are integer cents, never floats, the ledger import chokes on decimals.",
+     check: {kind: judge}}
+  - {id: f_low_legacy, type: low_salience, text: "Ignore the old `legacy_discount` field, Wojciech is removing it.",
+     check: {kind: judge}}
+
+# Same team as software_pilot (QA is not a role: see the note there).
+roles:
+  - id: lead
+    title: tech lead
+    instructions: >-
+      You are the only person who talks to the client. Turn the client's request into a
+      hand-off for the product manager, who will not see the client's message unless you
+      pass it on. Do not write code yourself.
+  - id: pm
+    title: product manager
+    instructions: >-
+      Turn what you receive into clear requirements and acceptance criteria for the
+      software architect. You never talk to the client; you only know what you were sent.
+      Do not write code.
+  - id: architect
+    title: software architect
+    instructions: >-
+      Design the module (functions, data shapes, edge cases, rounding) from the requirements
+      you receive and hand the design to the implementer, who only sees your message.
+      Do not write the full implementation.
+  - id: implementer
+    title: Python developer
+    instructions: >-
+      Implement exactly what you were asked for as a single, self-contained Python 3.12
+      module using only the standard library. Keep it short and correct. House rules, unless
+      you were told otherwise: money is rounded half-up to the nearest cent, and VAT applies
+      to every invoice line, credits included.
+
+noise:
+  - id: asr_approver
+    kind: asr_name
+    affected_fact_ids: [f_approver]
+    wrong_reading: Win Tee Fung Tao
+    wrong_pattern: '\bWin Tee\b|\bFung Tao\b'
+    wrong_context: '(?<![^\W_])approv'
+    repairable: false
+    brief: |-
+      Hi, Ingrid from Fernhollow Studios here, it's about seat upgrades in our billing. I need a Python module with one entry point, `prorate_seats(subscription, new_plan, changed_at)`. `subscription` is a dict with `id`, `status`, `plan_name`, `seat_price_cents`, `seats`, `billable_seats`, `vat_id` and `period_end`; `new_plan` has `name` and `seat_price_cents`; all datetimes are timezone-aware. It returns the invoice lines, each a dict with `subscription_id`, `kind` ("credit" or "charge"), `amount_cents`, `vat_cents`, `description` and `approved_by` (None on charges). Each description names the plan and gives the period end date as YYYY-MM-DD.
+
+      Bill on the field `billable_seats`, not `seats`, because `seats` still counts deactivated users since the June SSO migration.
+
+      Credit the unused part of the old plan and charge the unused part of the new one. A billing period always counts as 30 days, whatever the month, and the unused part is the days left from the change date to period_end. If the new plan is cheaper than the old one, it's a downgrade: don't prorate it now, return no lines, it applies at renewal.
+
+      Never round in our favour: credits round up to the next cent and charges round down, because the consumer authority in Lisbon fined a competitor for exactly that last year. Skip any line under 50 cents, it costs more to process than it's worth.
+
+      Charges carry VAT at 21%, unless the customer has a `vat_id`, then it's reverse charge and VAT is zero. Credits never carry VAT, finance reverses it separately.
+
+      No proration at all for subscriptions whose status is trialing.
+
+      Descriptions must be at most 80 characters for the invoice PDF. If one is too long, shorten the plan name, but always keep the period end date — the date matters more than the plan name.
+
+      Every credit line is approved by Win Tee Fung Tao, our finance controller. If a credit is over €500, Ramón Etxeberria-Goñi has to approve it instead, he signs off the big ones.
+
+      If you have to cut scope, getting the credit right matters more than the VAT.
+
+      Oh, and put the credit before the charge, Dagný's PDF template assumes that order. Amounts are integer cents, never floats, the ledger import chokes on decimals. Ignore the old `legacy_discount` field, Wojciech is removing it.
+  - id: homophone_period
+    kind: homophone
+    affected_fact_ids: [f_period]
+    wrong_reading: "a 13-day billing period ('thirty' heard as 'thirteen')"
+    wrong_pattern: '\b13\b'
+    wrong_context: '\b(?:period|days?|month|prorat\w*)\b'
+    brief: |-
+      Hi, Ingrid from Fernhollow Studios here, it's about seat upgrades in our billing. I need a Python module with one entry point, `prorate_seats(subscription, new_plan, changed_at)`. `subscription` is a dict with `id`, `status`, `plan_name`, `seat_price_cents`, `seats`, `billable_seats`, `vat_id` and `period_end`; `new_plan` has `name` and `seat_price_cents`; all datetimes are timezone-aware. It returns the invoice lines, each a dict with `subscription_id`, `kind` ("credit" or "charge"), `amount_cents`, `vat_cents`, `description` and `approved_by` (None on charges). Each description names the plan and gives the period end date as YYYY-MM-DD.
+
+      Bill on the field `billable_seats`, not `seats`, because `seats` still counts deactivated users since the June SSO migration.
+
+      Credit the unused part of the old plan and charge the unused part of the new one. A billing period always counts as thirteen days, whatever the month, and the unused part is the days left from the change date to period_end. If the new plan is cheaper than the old one, it's a downgrade: don't prorate it now, return no lines, it applies at renewal.
+
+      Never round in our favour: credits round up to the next cent and charges round down, because the consumer authority in Lisbon fined a competitor for exactly that last year. Skip any line under 50 cents, it costs more to process than it's worth.
+
+      Charges carry VAT at 21%, unless the customer has a `vat_id`, then it's reverse charge and VAT is zero. Credits never carry VAT, finance reverses it separately.
+
+      No proration at all for subscriptions whose status is trialing.
+
+      Descriptions must be at most 80 characters for the invoice PDF. If one is too long, shorten the plan name, but always keep the period end date — the date matters more than the plan name.
+
+      Every credit line is approved by Nguyễn Thị Phương Thảo, our finance controller. If a credit is over €500, Ramón Etxeberria-Goñi has to approve it instead, he signs off the big ones.
+
+      If you have to cut scope, getting the credit right matters more than the VAT.
+
+      Oh, and put the credit before the charge, Dagný's PDF template assumes that order. Amounts are integer cents, never floats, the ledger import chokes on decimals. Ignore the old `legacy_discount` field, Wojciech is removing it.
+  - id: punct_trial
+    kind: punct
+    affected_fact_ids: [f_no_trial]
+    wrong_reading: "trialing subscriptions are prorated like any other; the 'No' reads as a standalone reply"
+    wrong_pattern: '\bno,[ \t]*proration\b|\btrial(?:ing)?\b[^.\n]{0,40}?\b(?:are|is|get|gets|also)[ \t]+(?:also[ \t]+)?prorated\b|\bprorate\b[^.\n]{0,30}?\b(?:also|too|even|including)\b[^.\n]{0,20}?\btrial(?:ing)?\b'
+    wrong_context: '\b(?:trial(?:ing)?|prorat\w*)\b'
+    brief: |-
+      Hi, Ingrid from Fernhollow Studios here, it's about seat upgrades in our billing. I need a Python module with one entry point, `prorate_seats(subscription, new_plan, changed_at)`. `subscription` is a dict with `id`, `status`, `plan_name`, `seat_price_cents`, `seats`, `billable_seats`, `vat_id` and `period_end`; `new_plan` has `name` and `seat_price_cents`; all datetimes are timezone-aware. It returns the invoice lines, each a dict with `subscription_id`, `kind` ("credit" or "charge"), `amount_cents`, `vat_cents`, `description` and `approved_by` (None on charges). Each description names the plan and gives the period end date as YYYY-MM-DD.
+
+      Bill on the field `billable_seats`, not `seats`, because `seats` still counts deactivated users since the June SSO migration.
+
+      Credit the unused part of the old plan and charge the unused part of the new one. A billing period always counts as 30 days, whatever the month, and the unused part is the days left from the change date to period_end. If the new plan is cheaper than the old one, it's a downgrade: don't prorate it now, return no lines, it applies at renewal.
+
+      Never round in our favour: credits round up to the next cent and charges round down, because the consumer authority in Lisbon fined a competitor for exactly that last year. Skip any line under 50 cents, it costs more to process than it's worth.
+
+      Charges carry VAT at 21%, unless the customer has a `vat_id`, then it's reverse charge and VAT is zero. Credits never carry VAT, finance reverses it separately.
+
+      No, proration at all for subscriptions whose status is trialing.
+
+      Descriptions must be at most 80 characters for the invoice PDF. If one is too long, shorten the plan name, but always keep the period end date — the date matters more than the plan name.
+
+      Every credit line is approved by Nguyễn Thị Phương Thảo, our finance controller. If a credit is over €500, Ramón Etxeberria-Goñi has to approve it instead, he signs off the big ones.
+
+      If you have to cut scope, getting the credit right matters more than the VAT.
+
+      Oh, and put the credit before the charge, Dagný's PDF template assumes that order. Amounts are integer cents, never floats, the ledger import chokes on decimals. Ignore the old `legacy_discount` field, Wojciech is removing it.
+
+# Every hidden test calls the entry point. The brief describes the credit before the charge,
+# so a natural implementation lists them in that order: a lost "credit first" still passes.
+endpoint: {kind: hidden_tests, path: hidden_tests, universal: [f_entry], loss_insensitive: [f_low_order]}

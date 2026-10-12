@@ -1,0 +1,24 @@
+# Phase 0 only: how the FakeBackend's endpoint author "plans what it received" (see the
+# event_pilot twin). Mutations set a JSON path; tests/test_pilot.py checks each one fails only
+# its fact's plan check. Mutations apply in file order and never share a path.
+reference: plan_checks/reference_plan.json
+mutants:
+  w_date: {set: ["date", "2026-09-13"]}
+  w_venue: {set: ["venue.name", "Quinta do Covelo Novo"]}
+  w_guests: {set: ["guest_count", 86]}
+  w_ceremony: {set: ["schedule.ceremony_start", "16:30"]}
+  w_dinner: {set: ["schedule.dinner_start", "20:00"]}
+  w_shuttle: {set: ["schedule.last_shuttle", "00:30"]}
+  w_interpreter: {set: ["people.1.name", "Pavicky Yarvenpa"]}
+  w_grandmother: {set: ["people.2.name", "Aino Vanaanen"]}
+  w_low_hearing: {set: ["seating.front_row", ["Aino-Kaarina Väänänen", "Itzel Huerta", "Päivikki Järvenpää"]]}
+  w_no_nuts: {set: ["catering.excluded_allergens", ["gluten"]]}
+  w_diet: {set: ["catering.dietary_counts", {"vegetarian": 4, "children": 11}]}
+  w_no_lumiere: {set: ["photographer", "Lumière Fotografia"]}
+  w_no_macarena: {set: ["music.banned_songs", []]}
+  w_cond_cards: {set: ["menu_cards.languages", ["Spanish", "English", "Finnish"]]}
+  w_cond_heat: {set: ["contingency.heat.location", "olive grove marquee"]}
+  w_budget: {set: ["budget.cap_eur", 40000]}
+  w_priority_interp: {set: ["budget.cut_order", ["interpreter", "fireworks"]]}
+  w_priority_late: {set: ["contingency.late_ceremony", "shorten_ceremony"]}
+  w_low_dog: {set: ["venue_notes", ["Microphone for the interpreter in the chapel"]]}

@@ -23,7 +23,14 @@ The pre-registered design (hypotheses H1–H7, factors, scoring) is in [`DESIGN.
 | `agent_telephone/pilot.py` | end-to-end pilot grid → `runs/<backend>/summary.md` |
 | `scenarios/software_pilot` | opticians' appointment reminders; 22 facts; hidden tests; reference solution |
 | `scenarios/event_pilot` | partner dinner plan; 22 facts; JSON schema + plan checks; reference plan |
+| `scenarios/software_2` | seat-upgrade proration (billing); 21 facts; hidden tests; reference solution |
+| `scenarios/software_3` | GDPR account clean-up job; 19 facts; hidden tests; reference solution |
+| `scenarios/event_2` | bilingual wedding (Spanish/Finnish families); 21 facts; JSON schema + plan checks |
+| `scenarios/event_3` | one-day scientific symposium (speakers, AV); 21 facts; JSON schema + plan checks |
 | `fixtures/` | captured Claude Code streams (one contaminated, two isolated) |
+| `scripts/cc_pilot.py` | Phase 1 grid on Claude Code (subscription) → `runs/cc_pilot/` |
+| `scripts/backfill_usage.py` | re-derive per-message usage of logged Claude Code runs from their streams |
+| `scripts/score_real.py` | score real runs: deterministic + endpoints; judge behind `--judge gateway` (`--dry-run` = plan + cost) |
 
 ## Phases
 
@@ -64,4 +71,6 @@ uv run python -m agent_telephone.runner_cc --scenario scenarios/software_pilot -
 - H4 is scored on the endpoint (DESIGN §7); forward hand-offs are scored as contradiction.
 - Paid backends need a price in `config/prices.yaml`, a gateway URL (`--gateway-url` or
   `AGENT_TELEPHONE_GATEWAY_URL`) and a budget ledger outside the repo (created once with `--init-ledger`).
+- Deterministic scorer revised after the first real runs (DESIGN changelog, 2026-10-12): numbers before
+  that entry are void; validate against the blind label sheet (`runs/cc_pilot/labels/`) before quoting H1/H7.
 - Open before Phase 1: judge sampling for a genuine second pass; noise variants are hand-written (no TTS → Whisper yet); `peer_route` has no Claude Code runner.

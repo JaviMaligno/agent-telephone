@@ -20,22 +20,22 @@ brief: |-
 facts:
   - {id: e_date, type: number, text: "Thursday 19 November 2026",
      # dates are canonicalised to ISO; the year is required
-     check: {kind: regex, pattern: '\b2026-11-19\b', slot: '(?P<value>\b\d{4}-\d{2}-\d{2}\b)'}}
+     check: {kind: regex, pattern: '\b2026-11-19\b', slot: '(?:(?<![^\W_])(?:date|event|dinner|thursday|thu)(?![^\W_])|\b(?:held|takes place|is|happens)[ \t]+on\b)[^.\n\d]{0,20}?(?P<value>\b\d{4}-\d{2}-\d{2}\b)'}}
   - {id: e_venue, type: name, text: "Ardgillan Orangery",
      check: {kind: fuzzy, pattern: Ardgillan Orangery}}
   - {id: e_guests, type: number, text: "a hundred and forty-two guests",
      check: {kind: regex, pattern: '\b142\b', ignore: ['90'],
-            slot: '(?P<value>\b\d[\d,]*)[ \t]+(?:\w+[ \t]+){0,2}?(?:guests|people|attendees|covers|pax)\b|\b(?:guests?|guest count|headcount|attendees)\b[ \t]*[:=-]?[ \t]*(?P<value2>\d[\d,]*)'}}
+            slot: '(?P<value>\b\d{1,3}(?:,\d{3})*)[ \t]+(?:[^\W\d]+[ \t]+){0,2}?(?:guests|people|attendees|covers|pax)\b|(?<![^\W_])(?:guests?|guest[_ ]count|headcount|attendees)(?![^\W_])[ \t]*[:=-]?[ \t]*(?P<value2>\d{1,3}(?:,\d{3})*)'}}
   - {id: e_reception, type: number, text: "Drinks reception on the terrace from 18:30",
      # the time is matched deterministically; the place (terrace) is judged
      check: {kind: regex, pattern: '\b18:30\b', also_judge: true,
-            slot: '\breception\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:drinks[ \t]+)?reception\b'}}
+            slot: '(?<![^\W_])reception(?![^\W_])(?:(?!\b(?:and|bar|alcohol)\b)[^.\n\d]){0,40}?(?:\b(?:at|from|by)\b|(?<![^\W_])(?:start\w*|seated|served|begins?|leaves?|depart\w*|time)|[:=(])\W{0,4}(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:drinks[ \t]+)?reception\b'}}
   - {id: e_dinner, type: number, text: "dinner seated at 20:45",
      check: {kind: regex, pattern: '\b20:45\b',
-            slot: '\bdinner\b[^.\n]{0,30}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:seated[ \t]+)?dinner\b'}}
+            slot: '(?<![^\W_])dinner(?![^\W_])[^.\n\d]{0,30}?(?:\b(?:at|from|by)\b|(?<![^\W_])(?:start\w*|seated|served|begins?|leaves?|depart\w*|time)|[:=(])\W{0,4}(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:seated[ \t]+)?dinner\b'}}
   - {id: e_coach_time, type: number, text: "the coaches back to the city leave at 23:15",
      check: {kind: regex, pattern: '\b23:15\b',
-            slot: '\bcoach(?:es)?\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:return[ \t]+)?coach(?:es)?\b'}}
+            slot: '(?<![^\W_])coach(?:es)?(?![^\W_])[^.\n\d]{0,40}?(?:\b(?:at|from|by)\b|(?<![^\W_])(?:start\w*|seated|served|begins?|leaves?|depart\w*|time)|[:=(])\W{0,4}(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:return[ \t]+)?coach(?:es)?\b'}}
   - {id: e_speaker, type: name, text: "Dr Caoimhe Ní Fhlannagáin",
      check: {kind: fuzzy, pattern: Caoimhe Ní Fhlannagáin, aliases: [Caoimhe Ni Fhlannagain]}}
   - {id: e_vip_cfo, type: name,
@@ -48,8 +48,8 @@ facts:
      check: {kind: judge}}
   - {id: e_diet, type: number, text: "We have 18 vegetarians and 4 vegans.",
      check: {kind: regex, pattern: '\b18 vegetarians?\b[^.\n]*\b4 vegans?\b',
-            slot: ['(?P<value>\b\d+)[ \t]+vegetarians?\b|\bvegetarians?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)',
-                   '(?P<value>\b\d+)[ \t]+vegans?\b|\bvegans?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)']}}
+            slot: ['(?P<value>\b\d+)[ \t]+(?:guests[ \t]+)?(?:are[ \t]+)?vegetarians?\b|\bvegetarians?\b[ \t]*[:=(-]?[ \t]*(?P<value2>\d+)',
+                   '(?P<value>\b\d+)[ \t]+(?:guests[ \t]+)?(?:are[ \t]+)?vegans?\b|\bvegans?\b[ \t]*[:=(-]?[ \t]*(?P<value2>\d+)']}}
   - {id: e_no_alcohol, type: negation, text: "No alcohol before the keynote ends at 20:30; after that the bar's open.",
      check: {kind: judge}}
   - {id: e_rat_alcohol, type: rationale,
@@ -66,7 +66,7 @@ facts:
      check: {kind: judge}}
   - {id: e_budget, type: number, text: "The budget cap is €18,500 including VAT",
      check: {kind: regex, pattern: '\b18,?500\b',
-            slot: '\b(?:budget|cap)\b[^.\n\d]{0,30}?(?P<value>\d[\d,]*(?:\.\d+)?)|(?P<value2>\b\d[\d,]*(?:\.\d+)?)[ \t]*(?:eur|euros?|€)?[ \t]+(?:budget|cap)\b'}}
+            slot: '(?<![^\W_])(?:budget|cap)(?![^\W_])[^.\n\d]{0,30}?(?P<value>\d[\d,]*(?:\.\d+)?)|(?P<value2>\b\d[\d,]*(?:\.\d+)?)[ \t]*(?:eur|euros?|€)?[ \t]+(?:budget|cap)\b'}}
   - {id: e_priority_band, type: priority,
      text: "If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music.",
      check: {kind: judge}}
@@ -120,7 +120,7 @@ noise:
     affected_fact_ids: [e_vip_cfo, e_low_step_free]
     wrong_reading: Pshemislav Gribovsky
     wrong_pattern: '\bPshemislav\b|\bGribovsky\b'
-    wrong_context: '\b(?:CFO|VIP|partner|wheelchair|step[- ]?free|access)'
+    wrong_context: '\b(?:CFO|VIP|partner|wheelchair|step[- ]?free|access|seat\w*|top table|carer|companion|evacuat\w*)'
     repairable: false
     brief: |-
       Hi, it's Orla from Halloran Freight, about our annual partner dinner. It's on Thursday 19 November 2026, at the Ardgillan Orangery, and we're expecting a hundred and forty-two guests. Drinks reception on the terrace from 18:30, the keynote runs until 20:30, dinner seated at 20:45, and the coaches back to the city leave at 23:15.

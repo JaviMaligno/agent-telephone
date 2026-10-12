@@ -152,32 +152,63 @@ def truth_agreement(scores: list[ScoreRow], truth: dict) -> list[dict]:
             for k, (n, ok, u) in sorted(agg.items())]
 
 
-def h7_eligible(scenario: Scenario, ep: dict) -> set[str]:
+def noise_affected(scenario: Scenario, noise: str) -> set[str]:
+    return {f for n in scenario.noise if n.id == noise for f in n.affected_fact_ids}
+
+
+def h7_eligible(scenario: Scenario, ep: dict, with_noise: bool = False) -> set[str]:
     """Facts of one endpoint evaluation that can show H7: not loss-insensitive, and not failed
     only because a fact they depend on (universal / `depends`) failed. Forward runs: none (the
-    endpoint author read the attached original, so a note-view `lost` is not a loss)."""
+    endpoint author read the attached original, so a note-view `lost` is not a loss). Facts the
+    run's noise variant corrupts in the source are excluded unless `with_noise` (their wrong
+    reading propagates by design; `h7_by_fact` reports them flagged)."""
     if ep["handoff_format"] == "forward":
         return set()
     spec, facts = scenario.endpoint, ep["facts"]
+    noisy = set() if with_noise else noise_affected(scenario, ep.get("noise", "clean"))
     if any(not facts.get(u, True) for u in spec.universal):
-        return {u for u in spec.universal if u in facts}
-    return {f for f in facts if f not in spec.loss_insensitive
+        return {u for u in spec.universal if u in facts} - noisy
+    return {f for f in facts if f not in spec.loss_insensitive and f not in noisy
             and all(facts.get(d, True) for d in spec.depends.get(f, []))}
 
 
-def endpoint_vs_last_handoff(scores: list[ScoreRow], endpoints: list[dict], scenarios: dict[str, Scenario]) -> list[dict]:
-    """H7 plumbing: label of a fact in the last downward hand-off before the endpoint vs its endpoint check."""
+def _last_downward(scores: list[ScoreRow]) -> dict[tuple[str, str], tuple[int, str]]:
     last = {}
     for r in scores:
         if r.kind == "handoff" and r.direction == "down" and r.distance >= last.get((r.run_id, r.fact_id), (-1, None))[0]:
             last[(r.run_id, r.fact_id)] = (r.distance, r.label)
+    return last
+
+
+def endpoint_vs_last_handoff(scores: list[ScoreRow], endpoints: list[dict], scenarios: dict[str, Scenario]) -> list[dict]:
+    """H7: label of a fact in the last downward hand-off before the endpoint vs its endpoint check
+    (noise-affected facts of noisy runs excluded, see `h7_eligible`)."""
+    last = _last_downward(scores)
     agg = defaultdict(lambda: [0, 0])
     for ep in endpoints:
         for fid in h7_eligible(scenarios[ep["scenario"]], ep):
+            if (ep["run_id"], fid) not in last:  # not scored at the hand-off (judge fact, no judge)
+                continue
             label = last[(ep["run_id"], fid)][1]
             agg[label][0] += 1
             agg[label][1] += ep["facts"][fid]
     return [{"label_at_last_handoff": k, "facts": n, "endpoint_pass_rate": p / n} for k, (n, p) in sorted(agg.items())]
+
+
+def h7_by_fact(scores: list[ScoreRow], endpoints: list[dict], scenarios: dict[str, Scenario]) -> list[dict]:
+    """H7 per fact x label with n; noise-affected facts of noisy runs kept, flagged `noise_affected`."""
+    last = _last_downward(scores)
+    agg = defaultdict(lambda: [0, 0])
+    for ep in endpoints:
+        sc = scenarios[ep["scenario"]]
+        noisy = noise_affected(sc, ep.get("noise", "clean"))
+        for fid in h7_eligible(sc, ep, with_noise=True):
+            if (ep["run_id"], fid) in last:
+                a = agg[(fid, last[(ep["run_id"], fid)][1], fid in noisy)]
+                a[0] += 1
+                a[1] += ep["facts"][fid]
+    return [{"fact_id": f, "label_at_last_handoff": lab, "noise_affected": na, "facts": n, "passed": p,
+             "endpoint_pass_rate": p / n} for (f, lab, na), (n, p) in sorted(agg.items())]
 
 
 def endpoint_table(endpoints: list[dict], by: tuple[str, ...]) -> list[dict]:

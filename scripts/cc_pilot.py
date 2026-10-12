@@ -5,6 +5,9 @@ at list price (`modelUsage[*].costUSD`, `costBasis: list`), even when billed to 
 That is what we use to estimate the API arm.
 
     uv run python scripts/cc_pilot.py --out runs/cc_pilot --workers 4
+    uv run python scripts/cc_pilot.py --out runs/cc_grid --scenarios software_2,event_3
+
+Each scenario runs clean plus its ASR-name noise variant(s), as in the first pilot.
 """
 from __future__ import annotations
 
@@ -18,7 +21,8 @@ from pathlib import Path
 from agent_telephone import runner_cc
 from agent_telephone.schema import Condition, Scenario
 
-SCENARIOS = {"scenarios/software_pilot": ["clean", "asr_signer"], "scenarios/event_pilot": ["clean", "asr_cfo"]}
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_SCENARIOS = ["software_pilot", "event_pilot"]
 TOPOLOGIES = ["hier_chain", "hub_relay"]
 FORMATS = ["free", "structured", "forward"]
 MODELS = ["haiku", "sonnet"]
@@ -34,6 +38,22 @@ def final_result(stream: Path) -> dict:
         if ev.get("type") == "result":
             res = ev
     return res
+
+
+def scenario_noises(names: list[str]) -> dict[str, list[str]]:
+    """{scenario dir: noise levels} for scenario names (dirs under scenarios/) or paths: clean + the
+    asr_name variant(s)."""
+    out = {}
+    for name in names:
+        sdir = name if "/" in name else f"scenarios/{name}"
+        sc = Scenario.load(ROOT / sdir)  # relative paths are relative to the repo
+        if sc.id != Path(sdir).name:  # run ids and the resume check use the dir name
+            raise SystemExit(f"{sdir}: scenario id {sc.id!r} differs from its directory name")
+        out[sdir] = ["clean", *(n.id for n in sc.noise if n.kind == "asr_name")]
+    return out
+
+
+SCENARIOS = scenario_noises(DEFAULT_SCENARIOS)
 
 
 def one(scenario_dir: str, noise: str, topology: str, fmt: str, model: str, out: Path) -> dict:
@@ -66,10 +86,13 @@ def main() -> None:
     ap.add_argument("--out", default="runs/cc_pilot")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit", type=int, default=0, help="run only the first N conditions (smoke test)")
+    ap.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS),
+                    help="comma-separated scenario names (dirs under scenarios/) or paths; default: the two pilots")
     args = ap.parse_args()
+    scenarios = scenario_noises([s.strip() for s in args.scenarios.split(",") if s.strip()])
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    grid = [(s, n, t, f, m) for s, ns in SCENARIOS.items() for n, t, f, m in itertools.product(ns, TOPOLOGIES, FORMATS, MODELS)]
+    grid = [(s, n, t, f, m) for s, ns in scenarios.items() for n, t, f, m in itertools.product(ns, TOPOLOGIES, FORMATS, MODELS)]
     if args.limit:
         grid = grid[: args.limit]
     done = set()

@@ -1,0 +1,185 @@
+id: software_3
+domain: software
+# Fact `text` values are verbatim spans of `brief` (tests enforce it), so the FakeBackend
+# and the deterministic checks can locate them. Endpoint coverage: hidden_tests/.
+brief: |-
+  Hi, Mateusz from Tidewater Climbing here, it's about the GDPR clean-up job for member accounts. I need a Python module with one entry point, `plan_purge(accounts, today)`. It takes a list of account dicts and today's date and returns today's actions, each a dict with `account_id`, `action` ("delete", "anonymise" or "warn"), `due` (the date the account becomes due) and `approved_by`. Each account has `id`, `email`, `status`, `last_seen_at`, `last_login`, `closed_at` (a date, or None), `closed_by` ("member" or "staff"), `unpaid_invoices` and `litigation_hold`; all dates are `datetime.date`.
+
+  Inactivity is measured on `last_seen_at`, not `last_login`, because the mobile app stopped updating `last_login` after the Auth0 switch.
+
+  Delete an account 730 days after it was last seen. A closed account is deleted 30 days after `closed_at`, if that comes sooner. Return a delete action for every account that is due on or before today.
+
+  Also return a warn action for every account that will become due within the next 14 days, so the member gets a notice. If the member closed the account themselves, don't warn them, they asked to leave.
+
+  If an account has unpaid invoices, anonymise it instead of deleting it: keep the invoices, drop the personal data. That's because Skatteetaten makes us keep invoices for five years.
+
+  Never touch an account under `litigation_hold`, not even to anonymise or warn it. No actions at all for staff accounts, the ones with an email ending in `@tidewater-klatring.no`. And do not put the member's email address in any action, the audit log is shared with the climbing federation.
+
+  At most 200 deletions per run, the database locks up beyond that. If there are more, closed accounts go first: people who asked to leave matter more than inactive ones.
+
+  Every delete and anonymise action is approved by our DPO, Þórdís Sveinbjörnsdóttir; warnings have no approver.
+
+  If you have to cut scope, getting the deletions right matters more than the warnings.
+
+  Oh, and return the actions sorted by account id, Sigrún's audit diff relies on that. Put the `due` dates in as ISO strings, the audit log is JSON. Ignore the old `tenant` column, Matěj is dropping it next sprint.
+
+facts:
+  - {id: f_entry, type: name, text: "`plan_purge(accounts, today)`",
+     check: {kind: exact, pattern: plan_purge}}
+  # the name anchors the fact; which field wins (polarity) is the judge's call
+  - {id: f_seen_field, type: name, text: "Inactivity is measured on `last_seen_at`, not `last_login`",
+     check: {kind: exact, pattern: last_seen_at, also_judge: true}}
+  - {id: f_rat_seen, type: rationale, text: "because the mobile app stopped updating `last_login` after the Auth0 switch",
+     check: {kind: judge}}
+  - {id: f_inactive, type: number, text: "Delete an account 730 days after it was last seen.",
+     check: {kind: regex, pattern: '\b730\b',
+            slot: '(?P<value>\b\d+)[ \t-]*days?\b[^.\n\d]{0,25}?\b(?:last[ \t]+seen|inactiv\w*|last_seen_at)|\b(?:inactiv\w*|last[ \t]+seen)\b[^.\n\d]{0,25}?(?P<value2>\b\d+)[ \t-]*days?\b'}}
+  - {id: f_closed, type: number, text: "A closed account is deleted 30 days after `closed_at`, if that comes sooner.",
+     check: {kind: regex, pattern: '\b30[ \t-]*days?\b',
+            slot: '\bclosed\b[^.\n\d]{0,40}?(?P<value>\b\d+)[ \t-]*days?\b|(?P<value2>\b\d+)[ \t-]*days?\b[^.\n\d]{0,15}?\bclos'}}
+  - {id: f_warn, type: number, text: "return a warn action for every account that will become due within the next 14 days",
+     check: {kind: regex, pattern: '\b14\b',
+            slot: '\bwarn\w*\b[^.\n\d]{0,80}?(?P<value>\b\d+)[ \t-]*days?\b|(?P<value2>\b\d+)[ \t-]*days?\b[^.\n\d]{0,30}?\b(?:warn|notice)'}}
+  - {id: f_cond_warn, type: conditional, text: "If the member closed the account themselves, don't warn them",
+     check: {kind: judge}}
+  - {id: f_cond_invoice, type: conditional, text: "If an account has unpaid invoices, anonymise it instead of deleting it",
+     check: {kind: judge}}
+  - {id: f_rat_invoice, type: rationale, text: "That's because Skatteetaten makes us keep invoices for five years.",
+     check: {kind: judge}}
+  - {id: f_no_hold, type: negation,
+     text: "Never touch an account under `litigation_hold`, not even to anonymise or warn it.",
+     check: {kind: judge}}
+  - {id: f_no_staff, type: negation,
+     text: "No actions at all for staff accounts, the ones with an email ending in `@tidewater-klatring.no`.",
+     check: {kind: judge}}
+  - {id: f_no_email, type: negation, text: "do not put the member's email address in any action",
+     check: {kind: judge}}
+  - {id: f_batch, type: number, text: "At most 200 deletions per run",
+     check: {kind: regex, pattern: '\b200\b',
+            slot: '(?P<value>\b\d+)[ \t-]*(?:deletions?|deletes|accounts?)[ \t]+(?:per|a|each)[ \t]+(?:run|night|batch|job)\b|\b(?:per[ \t]+run|batch(?:[ \t]+size)?|cap(?:ped)?)\b[^.\n\d]{0,15}?(?P<value2>\b\d+)'}}
+  - {id: f_priority_closed, type: priority,
+     text: "If there are more, closed accounts go first: people who asked to leave matter more than inactive ones.",
+     check: {kind: judge}}
+  - {id: f_dpo, type: name, text: "Every delete and anonymise action is approved by our DPO, Þórdís Sveinbjörnsdóttir",
+     check: {kind: fuzzy, pattern: Þórdís Sveinbjörnsdóttir}}
+  - {id: f_priority_deletes, type: priority,
+     text: "If you have to cut scope, getting the deletions right matters more than the warnings.",
+     check: {kind: judge}}
+  - {id: f_low_sorted, type: low_salience, text: "return the actions sorted by account id, Sigrún's audit diff relies on that",
+     check: {kind: judge}}
+  - {id: f_low_iso, type: low_salience, text: "Put the `due` dates in as ISO strings, the audit log is JSON.",
+     check: {kind: judge}}
+  - {id: f_low_tenant, type: low_salience, text: "Ignore the old `tenant` column, Matěj is dropping it next sprint.",
+     check: {kind: judge}}
+
+# Same team as software_pilot (QA is not a role: see the note there).
+roles:
+  - id: lead
+    title: tech lead
+    instructions: >-
+      You are the only person who talks to the client. Turn the client's request into a
+      hand-off for the product manager, who will not see the client's message unless you
+      pass it on. Do not write code yourself.
+  - id: pm
+    title: product manager
+    instructions: >-
+      Turn what you receive into clear requirements and acceptance criteria for the
+      software architect. You never talk to the client; you only know what you were sent.
+      Do not write code.
+  - id: architect
+    title: software architect
+    instructions: >-
+      Design the module (functions, data shapes, edge cases, ordering) from the requirements
+      you receive and hand the design to the implementer, who only sees your message.
+      Do not write the full implementation.
+  - id: implementer
+    title: Python developer
+    instructions: >-
+      Implement exactly what you were asked for as a single, self-contained Python 3.12
+      module using only the standard library. Keep it short and correct. House rule: every
+      action dict also carries the account's `email`, so support can follow up with the member.
+
+noise:
+  - id: asr_dpo
+    kind: asr_name
+    affected_fact_ids: [f_dpo]
+    wrong_reading: Tordis Svenbjorn Dottir
+    wrong_pattern: '\bTordis\b|\bSvenbjorn\b'
+    wrong_context: '(?<![^\W_])approv|(?<![^\W_])DPO(?![^\W_])'
+    repairable: false
+    brief: |-
+      Hi, Mateusz from Tidewater Climbing here, it's about the GDPR clean-up job for member accounts. I need a Python module with one entry point, `plan_purge(accounts, today)`. It takes a list of account dicts and today's date and returns today's actions, each a dict with `account_id`, `action` ("delete", "anonymise" or "warn"), `due` (the date the account becomes due) and `approved_by`. Each account has `id`, `email`, `status`, `last_seen_at`, `last_login`, `closed_at` (a date, or None), `closed_by` ("member" or "staff"), `unpaid_invoices` and `litigation_hold`; all dates are `datetime.date`.
+
+      Inactivity is measured on `last_seen_at`, not `last_login`, because the mobile app stopped updating `last_login` after the Auth0 switch.
+
+      Delete an account 730 days after it was last seen. A closed account is deleted 30 days after `closed_at`, if that comes sooner. Return a delete action for every account that is due on or before today.
+
+      Also return a warn action for every account that will become due within the next 14 days, so the member gets a notice. If the member closed the account themselves, don't warn them, they asked to leave.
+
+      If an account has unpaid invoices, anonymise it instead of deleting it: keep the invoices, drop the personal data. That's because Skatteetaten makes us keep invoices for five years.
+
+      Never touch an account under `litigation_hold`, not even to anonymise or warn it. No actions at all for staff accounts, the ones with an email ending in `@tidewater-klatring.no`. And do not put the member's email address in any action, the audit log is shared with the climbing federation.
+
+      At most 200 deletions per run, the database locks up beyond that. If there are more, closed accounts go first: people who asked to leave matter more than inactive ones.
+
+      Every delete and anonymise action is approved by our DPO, Tordis Svenbjorn Dottir; warnings have no approver.
+
+      If you have to cut scope, getting the deletions right matters more than the warnings.
+
+      Oh, and return the actions sorted by account id, Sigrún's audit diff relies on that. Put the `due` dates in as ISO strings, the audit log is JSON. Ignore the old `tenant` column, Matěj is dropping it next sprint.
+  - id: homophone_warn
+    kind: homophone
+    affected_fact_ids: [f_warn]
+    wrong_reading: "warn 40 days ahead ('fourteen' heard as 'forty')"
+    wrong_pattern: '\b40\b'
+    wrong_context: '\b(?:warn\w*|notice|days?|due)\b'
+    brief: |-
+      Hi, Mateusz from Tidewater Climbing here, it's about the GDPR clean-up job for member accounts. I need a Python module with one entry point, `plan_purge(accounts, today)`. It takes a list of account dicts and today's date and returns today's actions, each a dict with `account_id`, `action` ("delete", "anonymise" or "warn"), `due` (the date the account becomes due) and `approved_by`. Each account has `id`, `email`, `status`, `last_seen_at`, `last_login`, `closed_at` (a date, or None), `closed_by` ("member" or "staff"), `unpaid_invoices` and `litigation_hold`; all dates are `datetime.date`.
+
+      Inactivity is measured on `last_seen_at`, not `last_login`, because the mobile app stopped updating `last_login` after the Auth0 switch.
+
+      Delete an account 730 days after it was last seen. A closed account is deleted 30 days after `closed_at`, if that comes sooner. Return a delete action for every account that is due on or before today.
+
+      Also return a warn action for every account that will become due within the next forty days, so the member gets a notice. If the member closed the account themselves, don't warn them, they asked to leave.
+
+      If an account has unpaid invoices, anonymise it instead of deleting it: keep the invoices, drop the personal data. That's because Skatteetaten makes us keep invoices for five years.
+
+      Never touch an account under `litigation_hold`, not even to anonymise or warn it. No actions at all for staff accounts, the ones with an email ending in `@tidewater-klatring.no`. And do not put the member's email address in any action, the audit log is shared with the climbing federation.
+
+      At most 200 deletions per run, the database locks up beyond that. If there are more, closed accounts go first: people who asked to leave matter more than inactive ones.
+
+      Every delete and anonymise action is approved by our DPO, Þórdís Sveinbjörnsdóttir; warnings have no approver.
+
+      If you have to cut scope, getting the deletions right matters more than the warnings.
+
+      Oh, and return the actions sorted by account id, Sigrún's audit diff relies on that. Put the `due` dates in as ISO strings, the audit log is JSON. Ignore the old `tenant` column, Matěj is dropping it next sprint.
+  - id: punct_warn
+    kind: punct
+    affected_fact_ids: [f_cond_warn]
+    wrong_reading: "members who closed the account themselves are warned too; the \"don't\" is cut off from \"warn\""
+    wrong_pattern: '\bdon''t\.[ \t]*warn\b|\bwarn\b[^.\n]{0,40}?\b(?:even|also|including)\b[^.\n]{0,30}?\bclosed\b|\bclosed\b[^.\n]{0,30}?\bthemselves\b[^.\n]{0,30}?\b(?:still[ \t]+)?(?:get|gets|receive|need)[ \t]+(?:a[ \t]+)?warn'
+    wrong_context: '\b(?:warn\w*|notice|clos\w*)\b'
+    brief: |-
+      Hi, Mateusz from Tidewater Climbing here, it's about the GDPR clean-up job for member accounts. I need a Python module with one entry point, `plan_purge(accounts, today)`. It takes a list of account dicts and today's date and returns today's actions, each a dict with `account_id`, `action` ("delete", "anonymise" or "warn"), `due` (the date the account becomes due) and `approved_by`. Each account has `id`, `email`, `status`, `last_seen_at`, `last_login`, `closed_at` (a date, or None), `closed_by` ("member" or "staff"), `unpaid_invoices` and `litigation_hold`; all dates are `datetime.date`.
+
+      Inactivity is measured on `last_seen_at`, not `last_login`, because the mobile app stopped updating `last_login` after the Auth0 switch.
+
+      Delete an account 730 days after it was last seen. A closed account is deleted 30 days after `closed_at`, if that comes sooner. Return a delete action for every account that is due on or before today.
+
+      Also return a warn action for every account that will become due within the next 14 days, so the member gets a notice. If the member closed the account themselves, don't. Warn them, they asked to leave.
+
+      If an account has unpaid invoices, anonymise it instead of deleting it: keep the invoices, drop the personal data. That's because Skatteetaten makes us keep invoices for five years.
+
+      Never touch an account under `litigation_hold`, not even to anonymise or warn it. No actions at all for staff accounts, the ones with an email ending in `@tidewater-klatring.no`. And do not put the member's email address in any action, the audit log is shared with the climbing federation.
+
+      At most 200 deletions per run, the database locks up beyond that. If there are more, closed accounts go first: people who asked to leave matter more than inactive ones.
+
+      Every delete and anonymise action is approved by our DPO, Þórdís Sveinbjörnsdóttir; warnings have no approver.
+
+      If you have to cut scope, getting the deletions right matters more than the warnings.
+
+      Oh, and return the actions sorted by account id, Sigrún's audit diff relies on that. Put the `due` dates in as ISO strings, the audit log is JSON. Ignore the old `tenant` column, Matěj is dropping it next sprint.
+
+# Every hidden test calls the entry point. The implementer's house rule (email in every action)
+# makes a lost "no email in any action" observable.
+endpoint: {kind: hidden_tests, path: hidden_tests, universal: [f_entry]}

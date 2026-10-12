@@ -12,17 +12,20 @@ Pooling rules (pre-registered, DESIGN §7):
 - `survival_by_info_distance` uses the writer's information distance (hub_relay's lead -> r2 is
   nominal distance 4 but information distance 2).
 - `forward` hand-offs are scored as **contradiction**: did the note contradict the attached
-  original (distorted / inverted)? A silent note is not a loss (`forward_contradiction`).
+  original (distorted / inverted)? A silent note is not a loss, and repeating the attachment's own
+  noise reading is not a contradiction (counted apart as `noise_reading`) (`forward_contradiction`).
 
 Noise classes, per (noisy run, affected fact, non-source message), always on the agent-written
 part of the message (note view: deterministic labels recomputed on the note, judge labels only
 from note-view score rows, else `unscored`). The wrong reading is the variant's machine-checkable
 `wrong_pattern`, searched on number-normalised text:
-- flagged: the wrong reading is present with a doubt marker next to it ("please confirm",
-  "typo", "transcription", "?"): the agent questioned it;
-- amplify: the wrong reading appears in a sentence outside its legitimate context
-  (`wrong_context`): it spread to another fact (repeating it in context is not amplification;
-  hand-offs only: an endpoint artifact is code/JSON, where the reading can only freeze);
+- flagged: the wrong reading is present and its own sentence doubts the *name/reading* ("typo",
+  "transcription", "please confirm the spelling", "name unclear", or a "?" right after it); a
+  "confirm" about something else in the sentence (the venue, transport) is not doubt;
+- amplify: the wrong reading appears in a prose sentence outside its legitimate context
+  (`wrong_context`): it spread to another fact (repeating it in context is not amplification).
+  Code/JSON (fenced blocks, `x = ...` / `{` lines, endpoint artifacts, hand-backs relaying code)
+  has no sentences to spread to: a reading found only there is freeze;
 - freeze:  the wrong reading is present, in context, unquestioned;
 - repair:  the wrong reading is absent and the fact is preserved (only possible when the
   variant is `repairable`; an ASR-mangled name gives no way back);
@@ -46,8 +49,25 @@ from .topologies import USER
 CONDITION_KEYS = ("topology", "model", "handoff_format", "noise")
 # H1/H5 tables exclude upward hand-backs and forward notes; see `primary`.
 NOISE_CLASSES = ("flagged", "freeze", "amplify", "repair", "lost", "drift")
-DOUBT = re.compile(r"confirm|typo|transcri|mis-?heard|spell|verify|double[- ]check|check with|unclear|not sure|\?", re.I)
+# Doubt about the name/reading itself (not "confirm the venue"): searched in the hit's own sentence.
+DOUBT = re.compile(
+    r"\b(?:typo|transcri\w*|mis-?heard|mis-?spel\w*|phonetic\w*|garbled|sounds? like|as heard)\b"
+    r"|\b(?:confirm\w*|verify|check\w*|double[- ]check\w*|clarify)\b[^.\n]{0,40}?\b(?:spell\w*|names?)\b"
+    r"|\b(?:spell\w*|names?)\b[^.\n]{0,40}?\b(?:unclear|uncertain|unsure|not sure|unverified|to be confirmed|tbc"
+    r"|needs? (?:confirm\w*|check\w*|verif\w*)|confirm\w*|verify|check)\b", re.I)
+QUESTION_AFTER = re.compile(r"[\s\"'*)]{0,3}\?")
 SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n+")
+CODE_LINE = re.compile(
+    r"^\s*(?:[\w.\[\]'\"]+\s*(?:=|:=)\s*\S|[{}\[\]]|[\"'][^\"']*[\"']\s*[:,]|def |class |return |import |from \w+ import"
+    r"|#|//|assert\b|self\.|else\b|elif\b|(?:if|for|while|with)\b.*:\s*$)"
+    r"|^ {4,}(?![-*+] |\d+[.)] )\S"  # indented code (not a nested list item)
+    r"|[\"'][)\]},;:]*\s*$")  # a line that ends inside a string literal / call
+FENCE = re.compile(r"```.*?(?:```|\Z)", re.S)
+
+
+def prose_part(text: str) -> str:
+    """The prose of a note: fenced blocks and code/JSON-shaped lines removed."""
+    return "\n".join(line for line in FENCE.sub("\n", text).splitlines() if not CODE_LINE.match(line))
 
 
 def _get(r: ScoreRow, key: str):
@@ -80,6 +100,11 @@ def upward(scores: list[ScoreRow]) -> list[ScoreRow]:
     return [r for r in scores if r.kind == "handoff" and r.direction == "up"]
 
 
+def is_noise_reading(r: ScoreRow) -> bool:
+    """Distorted only because the note carries the run's noise reading (deterministic, see FactMatcher)."""
+    return r.label == "distorted" and r.method == "deterministic" and (r.evidence or "").startswith("noise reading")
+
+
 def forward_contradiction(scores: list[ScoreRow], by: tuple[str, ...] = ()) -> list[dict]:
     """Forward hand-offs: per distance, how often the note contradicts the attachment."""
     groups: dict[tuple, list[ScoreRow]] = defaultdict(list)
@@ -89,9 +114,11 @@ def forward_contradiction(scores: list[ScoreRow], by: tuple[str, ...] = ()) -> l
     out = []
     for g, rs in sorted(groups.items(), key=lambda kv: tuple(map(str, kv[0]))):
         scored = [r for r in rs if r.label != "unscored"]
-        bad = sum(r.label in ("distorted", "inverted") for r in scored)
+        echo = sum(is_noise_reading(r) for r in scored)  # repeats the attached (noisy) source: no contradiction
+        bad = sum(r.label in ("distorted", "inverted") and not is_noise_reading(r) for r in scored)
         out.append({**dict(zip((*by, "direction", "distance"), g)), "n": len(rs), "scored": len(scored),
                     "contradicted": bad, "contradiction_rate": bad / len(scored) if scored else None,
+                    "noise_reading": echo,
                     "silent_rate": sum(r.label == "lost" for r in scored) / len(scored) if scored else None})
     return out
 
@@ -108,12 +135,18 @@ def invented_by_distance(invented: list[InventedClaim], messages: list[Message])
 
 
 def wrong_reading(note: str, pattern: str, context: str) -> tuple[int, bool, bool]:
-    """(occurrences of the wrong reading, any of them flagged as doubtful, any outside its context)."""
+    """(occurrences of the wrong reading, any of them doubted in its own sentence, any outside its
+    context). Doubt and spread are read on the prose part only (see `prose_part`)."""
     text = canon(note)
-    hits = list(re.finditer(pattern, text, re.I))
-    flagged = any(DOUBT.search(text[max(0, m.start() - 80): m.end() + 80]) for m in hits)
-    spread = any(re.search(pattern, sent, re.I) and not re.search(context, sent, re.I) for sent in SENTENCE.split(text))
-    return len(hits), flagged, spread
+    count = len(re.findall(pattern, text, re.I))
+    flagged = spread = False
+    for sent in SENTENCE.split(prose_part(text)):
+        hits = list(re.finditer(pattern, sent, re.I))
+        if not hits:
+            continue
+        flagged |= bool(DOUBT.search(sent)) or any(QUESTION_AFTER.match(sent, m.end()) for m in hits)
+        spread |= not re.search(context, sent, re.I)
+    return count, flagged, spread
 
 
 def noise_classes(scenarios: dict[str, Scenario], messages: list[Message], scores: list[ScoreRow]) -> list[dict]:
@@ -133,13 +166,13 @@ def noise_classes(scenarios: dict[str, Scenario], messages: list[Message], score
             if m.sender == USER:
                 continue
             note = strip_attachment(m.text)
-            det_labels = det[scen.id].label_text(note)
+            det_labels = det[scen.id].label_text(note, cond.noise)
             count, flagged, spread = wrong_reading(note, v.wrong_pattern, v.wrong_context)
             for fid in v.affected_fact_ids:
                 label = det_labels[fid][0] if fid in det_labels else labels.get(
                     (run_id, m.distance, m.sender, m.receiver, fid), "unscored")
                 if count:
-                    prose = message_kind(m) != "endpoint"  # code/JSON artifacts have no sentences to spread to
+                    prose = message_kind(m) != "endpoint"  # the artifact is code/JSON: no sentences to spread to
                     cls = "flagged" if flagged and prose else "amplify" if spread and prose else "freeze"
                 else:
                     cls = {"preserved": "repair", "lost": "lost", "unscored": "unscored"}.get(label, "drift")

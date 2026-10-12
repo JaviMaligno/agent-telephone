@@ -1,0 +1,182 @@
+id: event_3
+domain: event
+# Fact `text` values are verbatim spans of `brief` (tests enforce it). Endpoint coverage:
+# plan_checks/checks.py maps every fact id to a deterministic check or JUDGE_ONLY.
+brief: |-
+  Hello, this is Dr Mireille Okafor from the European Glaciology Network, about our one-day symposium. It's on Tuesday 9 March 2027 in the Aula Leopoldina in Wrocław, and we have two hundred and thirty-eight delegates registered. The keynote starts at 09:15, the afternoon panel at 14:00, the poster session runs from 15:30, and we close at 18:00.
+
+  Our keynote speaker is Prof. Chiamaka Nwachukwu-Eze, and Dr Zsófia Szőke-Gyöngyösi chairs the morning session. All AV questions go to the venue's technician, Bartłomiej Żółkiewski.
+
+  AV: do not record or stream the afternoon panel, because two of the panellists are presenting unpublished data. Everything else can be recorded. And no flash photography during the talks.
+
+  Catering: we need 31 vegetarian, 9 halal and 4 gluten-free lunches. No coffee or food inside the Aula itself, only in the foyer; it's a listed baroque interior.
+
+  Rooms: book the overflow room only if more than 260 delegates register for the keynote; for now it's just the Aula.
+
+  If there's a rail strike that day, push the whole programme back by 45 minutes.
+
+  The budget cap is €31,750 including VAT, and it's hard. If the budget is tight, cut the conference dinner before the live captioning; deaf delegates being able to follow the talks matters more than the dinner. And if a talk overruns, shorten the coffee break, never the questions.
+
+  Oh, and Chiamaka's slides are 4:3, so set the projector to 4:3. And Zsófia needs a lapel mic rather than a handheld one, she gestures a lot.
+
+facts:
+  - {id: c_date, type: number, text: "Tuesday 9 March 2027",
+     # dates are canonicalised to ISO; the year is required
+     check: {kind: regex, pattern: '\b2027-03-09\b', slot: '(?P<value>\b\d{4}-\d{2}-\d{2}\b)'}}
+  - {id: c_venue, type: name, text: "Aula Leopoldina",
+     check: {kind: fuzzy, pattern: Aula Leopoldina}}
+  - {id: c_delegates, type: number, text: "two hundred and thirty-eight delegates registered",
+     check: {kind: regex, pattern: '\b238\b', ignore: ['260'],
+            slot: '(?P<value>\b\d[\d,]*)[ \t]+(?:\w+[ \t]+){0,2}?(?:delegates|attendees|participants|people|registrations)\b|\b(?:delegates?|attendees|participants|headcount|registrations)\b[ \t]*[:=-]?[ \t]*(?P<value2>\d[\d,]*)'}}
+  - {id: c_keynote_time, type: number, text: "The keynote starts at 09:15",
+     check: {kind: regex, pattern: '\b09:15\b',
+            slot: '\bkeynote\b[^.\n]{0,30}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+keynote\b'}}
+  - {id: c_posters, type: number, text: "the poster session runs from 15:30",
+     check: {kind: regex, pattern: '\b15:30\b',
+            slot: '\bposters?\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+posters?\b'}}
+  - {id: c_keynote_speaker, type: name, text: "Our keynote speaker is Prof. Chiamaka Nwachukwu-Eze",
+     check: {kind: fuzzy, pattern: Chiamaka Nwachukwu-Eze}}
+  - {id: c_chair, type: name, text: "Dr Zsófia Szőke-Gyöngyösi chairs the morning session",
+     check: {kind: fuzzy, pattern: Zsófia Szőke-Gyöngyösi, aliases: [Zsofia Szoke-Gyongyosi]}}
+  - {id: c_av_contact, type: name, text: "All AV questions go to the venue's technician, Bartłomiej Żółkiewski.",
+     # no ASCII alias: fold() keeps ł, so an alias would score a dropped accent as preserved
+     check: {kind: fuzzy, pattern: Bartłomiej Żółkiewski}}
+  - {id: c_no_record, type: negation, text: "do not record or stream the afternoon panel",
+     check: {kind: judge}}
+  - {id: c_rat_record, type: rationale, text: "because two of the panellists are presenting unpublished data",
+     check: {kind: judge}}
+  - {id: c_no_flash, type: negation, text: "no flash photography during the talks",
+     check: {kind: judge}}
+  - {id: c_lunch, type: number, text: "we need 31 vegetarian, 9 halal and 4 gluten-free lunches",
+     check: {kind: regex, pattern: '\b31 vegetarians?\b[^.\n]*\b9 halal\b[^.\n]*\b4 gluten[- ]?free\b',
+            slot: ['(?P<value>\b\d+)[ \t]+vegetarians?\b|\bvegetarians?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)',
+                   '(?P<value>\b\d+)[ \t]+halal\b|\bhalal\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)',
+                   '(?P<value>\b\d+)[ \t]+gluten[- ]?free\b|\bgluten[- ]?free\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)']}}
+  - {id: c_no_coffee, type: negation, text: "No coffee or food inside the Aula itself, only in the foyer",
+     check: {kind: judge}}
+  - {id: c_rat_coffee, type: rationale, text: "it's a listed baroque interior",
+     check: {kind: judge}}
+  - {id: c_cond_overflow, type: conditional,
+     text: "book the overflow room only if more than 260 delegates register for the keynote",
+     check: {kind: judge}}
+  - {id: c_cond_strike, type: conditional, text: "If there's a rail strike that day, push the whole programme back by 45 minutes.",
+     check: {kind: judge}}
+  - {id: c_budget, type: number, text: "The budget cap is €31,750 including VAT",
+     check: {kind: regex, pattern: '\b31,?750\b',
+            slot: '\b(?:budget|cap)\b[^.\n\d]{0,30}?(?P<value>\d[\d,]*(?:\.\d+)?)|(?P<value2>\b\d[\d,]*(?:\.\d+)?)[ \t]*(?:eur|euros?|€)?[ \t]+(?:budget|cap)\b'}}
+  - {id: c_priority_caption, type: priority,
+     text: "If the budget is tight, cut the conference dinner before the live captioning; deaf delegates being able to follow the talks matters more than the dinner.",
+     check: {kind: judge}}
+  - {id: c_priority_questions, type: priority, text: "if a talk overruns, shorten the coffee break, never the questions",
+     check: {kind: judge}}
+  - {id: c_low_ratio, type: low_salience, text: "Chiamaka's slides are 4:3, so set the projector to 4:3.",
+     check: {kind: judge}}
+  - {id: c_low_lapel, type: low_salience,
+     text: "Zsófia needs a lapel mic rather than a handheld one, she gestures a lot.",
+     check: {kind: judge}}
+
+roles:
+  - id: am
+    title: account manager
+    instructions: >-
+      You are the only person who talks to the client. Brief the logistics coordinator on
+      the event; they will not see the client's message unless you pass it on.
+  - id: logistics
+    title: logistics coordinator
+    instructions: >-
+      Plan the event's logistics (timings, rooms, speakers, AV, catering, budget, contingencies)
+      from what you receive, and brief the vendor liaison, who deals with the venue, the caterer
+      and the AV company and only sees your message.
+  - id: vendor
+    title: vendor liaison
+    instructions: |-
+      You book the venue, the caterer, the AV and the photographer and write the final event plan.
+      Agency defaults, kept unless you were told otherwise: the AV package records and
+      livestreams every session, the photographer shoots with flash, and coffee is served at
+      the back of the lecture hall.
+      The final plan is one JSON object with exactly this shape (times "HH:MM", date
+      "YYYY-MM-DD", money in EUR):
+      {"event_name": str, "date": str, "delegate_count": int,
+       "venue": {"name": str, "coffee_location": str},
+       "schedule": {"keynote_start": str, "panel_start": str, "poster_session_start": str, "close": str},
+       "speakers": [{"name": str, "role": str}],
+       "av": {"contact": str, "aspect_ratio": str, "recorded_sessions": [str], "streamed_sessions": [str],
+              "microphones": [{"speaker": str, "type": "lapel" | "handheld" | "lectern"}]},
+       "photography": {"flash_allowed": bool},
+       "catering": {"lunch_counts": {"vegetarian": int, "halal": int, "gluten_free": int}, "coffee_breaks": [str]},
+       "rooms": {"overflow_booked": bool, "book_overflow_if_over": int or null},
+       "contingency": {"rail_strike_delay_minutes": int or null, "talk_overrun": "shorten_coffee" | "shorten_questions"},
+       "budget": {"cap_eur": number, "total_eur": number,
+                  "cut_order": [items from "dinner", "captioning", "printed_programme", "swag", "photographer", first cut first]}}
+
+noise:
+  - id: asr_av
+    kind: asr_name
+    affected_fact_ids: [c_av_contact]
+    wrong_reading: Bartwomiej Zhulkevsky
+    wrong_pattern: '\bBartwomiej\b|\bZhulkevsky\b'
+    wrong_context: '\b(?:AV|technician|contact|audio|sound|projector)\b'
+    repairable: false
+    brief: |-
+      Hello, this is Dr Mireille Okafor from the European Glaciology Network, about our one-day symposium. It's on Tuesday 9 March 2027 in the Aula Leopoldina in Wrocław, and we have two hundred and thirty-eight delegates registered. The keynote starts at 09:15, the afternoon panel at 14:00, the poster session runs from 15:30, and we close at 18:00.
+
+      Our keynote speaker is Prof. Chiamaka Nwachukwu-Eze, and Dr Zsófia Szőke-Gyöngyösi chairs the morning session. All AV questions go to the venue's technician, Bartwomiej Zhulkevsky.
+
+      AV: do not record or stream the afternoon panel, because two of the panellists are presenting unpublished data. Everything else can be recorded. And no flash photography during the talks.
+
+      Catering: we need 31 vegetarian, 9 halal and 4 gluten-free lunches. No coffee or food inside the Aula itself, only in the foyer; it's a listed baroque interior.
+
+      Rooms: book the overflow room only if more than 260 delegates register for the keynote; for now it's just the Aula.
+
+      If there's a rail strike that day, push the whole programme back by 45 minutes.
+
+      The budget cap is €31,750 including VAT, and it's hard. If the budget is tight, cut the conference dinner before the live captioning; deaf delegates being able to follow the talks matters more than the dinner. And if a talk overruns, shorten the coffee break, never the questions.
+
+      Oh, and Chiamaka's slides are 4:3, so set the projector to 4:3. And Zsófia needs a lapel mic rather than a handheld one, she gestures a lot.
+  - id: homophone_delegates
+    kind: homophone
+    affected_fact_ids: [c_delegates]
+    wrong_reading: "38 (or 138) delegates ('two' heard as 'to')"
+    wrong_pattern: '\bhundred and 38\b|\b(?:38|138)[ \t]+(?:\w+[ \t]+)?(?:delegates|attendees|participants|people)\b|\b(?:delegates?|attendees|participants|headcount)\b[ \t]*[:=-]?[ \t]*(?:38|138)\b'
+    wrong_context: '\b(?:delegates?|attendees|registered|registrations|participants|people|headcount)\b'
+    brief: |-
+      Hello, this is Dr Mireille Okafor from the European Glaciology Network, about our one-day symposium. It's on Tuesday 9 March 2027 in the Aula Leopoldina in Wrocław, and we have to hundred and thirty-eight delegates registered. The keynote starts at 09:15, the afternoon panel at 14:00, the poster session runs from 15:30, and we close at 18:00.
+
+      Our keynote speaker is Prof. Chiamaka Nwachukwu-Eze, and Dr Zsófia Szőke-Gyöngyösi chairs the morning session. All AV questions go to the venue's technician, Bartłomiej Żółkiewski.
+
+      AV: do not record or stream the afternoon panel, because two of the panellists are presenting unpublished data. Everything else can be recorded. And no flash photography during the talks.
+
+      Catering: we need 31 vegetarian, 9 halal and 4 gluten-free lunches. No coffee or food inside the Aula itself, only in the foyer; it's a listed baroque interior.
+
+      Rooms: book the overflow room only if more than 260 delegates register for the keynote; for now it's just the Aula.
+
+      If there's a rail strike that day, push the whole programme back by 45 minutes.
+
+      The budget cap is €31,750 including VAT, and it's hard. If the budget is tight, cut the conference dinner before the live captioning; deaf delegates being able to follow the talks matters more than the dinner. And if a talk overruns, shorten the coffee break, never the questions.
+
+      Oh, and Chiamaka's slides are 4:3, so set the projector to 4:3. And Zsófia needs a lapel mic rather than a handheld one, she gestures a lot.
+  - id: punct_record
+    kind: punct
+    affected_fact_ids: [c_no_record]
+    wrong_reading: "the afternoon panel is streamed (only recording is ruled out); the sentence break moves the negation"
+    wrong_pattern: '\brecord\.[ \t]*or[ \t]+stream\b|\bpanel\b(?:(?!\b(?:not|never|no)\b|n''t)[^.\n]){0,30}?\b(?:is|will be|should be|can be|gets|to be)[ \t]+(?:live[ \t-]?)?streamed\b|(?<!not )(?<!n''t )(?<!never )(?<!no )\bstream(?:ing)?[ \t]+the[ \t]+(?:afternoon[ \t]+)?panel\b[^.\n]{0,20}?\b(?:live|online)\b'
+    wrong_context: '\b(?:stream\w*|record\w*|panel|AV|video)\b'
+    brief: |-
+      Hello, this is Dr Mireille Okafor from the European Glaciology Network, about our one-day symposium. It's on Tuesday 9 March 2027 in the Aula Leopoldina in Wrocław, and we have two hundred and thirty-eight delegates registered. The keynote starts at 09:15, the afternoon panel at 14:00, the poster session runs from 15:30, and we close at 18:00.
+
+      Our keynote speaker is Prof. Chiamaka Nwachukwu-Eze, and Dr Zsófia Szőke-Gyöngyösi chairs the morning session. All AV questions go to the venue's technician, Bartłomiej Żółkiewski.
+
+      AV: do not record. Or stream the afternoon panel, because two of the panellists are presenting unpublished data. Everything else can be recorded. And no flash photography during the talks.
+
+      Catering: we need 31 vegetarian, 9 halal and 4 gluten-free lunches. No coffee or food inside the Aula itself, only in the foyer; it's a listed baroque interior.
+
+      Rooms: book the overflow room only if more than 260 delegates register for the keynote; for now it's just the Aula.
+
+      If there's a rail strike that day, push the whole programme back by 45 minutes.
+
+      The budget cap is €31,750 including VAT, and it's hard. If the budget is tight, cut the conference dinner before the live captioning; deaf delegates being able to follow the talks matters more than the dinner. And if a talk overruns, shorten the coffee break, never the questions.
+
+      Oh, and Chiamaka's slides are 4:3, so set the projector to 4:3. And Zsófia needs a lapel mic rather than a handheld one, she gestures a lot.
+
+# "Lapel mic for Zsófia" needs her named in the plan (the check accepts her first name).
+endpoint: {kind: plan_checks, path: plan_checks, depends: {c_low_lapel: [c_chair]}}

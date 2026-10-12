@@ -1,0 +1,32 @@
+{
+  "event_name": "Wedding of Xóchitl and Eero",
+  "date": "2026-09-12",
+  "guest_count": 96,
+  "venue": {"name": "Quinta do Covelo Velho", "ceremony_location": "chapel", "cocktail_location": "olive grove"},
+  "schedule": {"ceremony_start": "16:00", "cocktails_start": "17:15", "dinner_start": "19:30", "last_shuttle": "01:30"},
+  "people": [
+    {"name": "Xóchitl", "role": "bride"},
+    {"name": "Päivikki Järvenpää", "role": "interpreter (Spanish to Finnish)"},
+    {"name": "Aino-Kaarina Väänänen", "role": "guest of honour, Eero's grandmother"},
+    {"name": "Eero", "role": "groom"}
+  ],
+  "seating": {"front_row": ["Itzel Huerta", "Päivikki Järvenpää", "Aino-Kaarina Väänänen", "Eero's parents"],
+              "notes": "Aino-Kaarina is hard of hearing: seated right next to the interpreter."},
+  "catering": {
+    "excluded_allergens": ["nuts (including almonds)"],
+    "menu": [
+      {"course": "starter", "dish": "Caldo verde with chouriço", "contains": []},
+      {"course": "main", "dish": "Slow-roast lamb with rosemary potatoes", "contains": ["sulphites"]},
+      {"course": "main (vegetarian)", "dish": "Wild mushroom and chard rice", "contains": ["dairy"]},
+      {"course": "main (children)", "dish": "Chicken with chips", "contains": ["gluten"]},
+      {"course": "dessert", "dish": "Lemon and olive oil wedding cake", "contains": ["gluten", "eggs", "dairy"]}
+    ],
+    "dietary_counts": {"vegetarian": 11, "children": 4}
+  },
+  "menu_cards": {"languages": ["Spanish", "English"], "add_finnish_if_over": 25},
+  "music": {"banned_songs": ["Macarena"]},
+  "photographer": "Estúdio Ribeiro & Filhos",
+  "contingency": {"heat": {"threshold_celsius": 32, "location": "wine cellar"}, "late_ceremony": "shorten_cocktails"},
+  "budget": {"cap_eur": 42000, "total_eur": 40650, "cut_order": ["photo_booth", "fireworks", "flowers", "interpreter"]},
+  "venue_notes": ["A dog (Pimienta, the ring bearer) attends the ceremony", "Microphone for the interpreter in the chapel"]
+}

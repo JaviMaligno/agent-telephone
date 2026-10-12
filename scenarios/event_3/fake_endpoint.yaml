@@ -1,0 +1,24 @@
+# Phase 0 only: how the FakeBackend's endpoint author "plans what it received" (see the
+# event_pilot twin). Mutations set a JSON path; tests/test_pilot.py checks each one fails only
+# its fact's plan check. Mutations apply in file order and never share a path.
+reference: plan_checks/reference_plan.json
+mutants:
+  c_date: {set: ["date", "2027-03-10"]}
+  c_venue: {set: ["venue.name", "Aula Magna"]}
+  c_delegates: {set: ["delegate_count", 138]}
+  c_keynote_time: {set: ["schedule.keynote_start", "09:45"]}
+  c_posters: {set: ["schedule.poster_session_start", "16:30"]}
+  c_keynote_speaker: {set: ["speakers.0.name", "Prof. Chiamaka Nwachukwu"]}
+  c_chair: {set: ["speakers.1.name", "Dr Zsofia Szoke"]}
+  c_av_contact: {set: ["av.contact", "Bartwomiej Zhulkevsky"]}
+  c_lunch: {set: ["catering.lunch_counts", {"vegetarian": 31, "halal": 4, "gluten_free": 9}]}
+  c_no_record: {set: ["av.streamed_sessions", ["keynote", "morning session", "afternoon panel"]]}
+  c_no_flash: {set: ["photography.flash_allowed", true]}
+  c_no_coffee: {set: ["venue.coffee_location", "back of the lecture hall"]}
+  c_cond_overflow: {set: ["rooms.overflow_booked", true]}
+  c_cond_strike: {set: ["contingency.rail_strike_delay_minutes", 30]}
+  c_budget: {set: ["budget.cap_eur", 35000]}
+  c_priority_caption: {set: ["budget.cut_order", ["captioning", "dinner"]]}
+  c_priority_questions: {set: ["contingency.talk_overrun", "shorten_questions"]}
+  c_low_ratio: {set: ["av.aspect_ratio", "16:9"]}
+  c_low_lapel: {set: ["av.microphones.1.type", "handheld"]}

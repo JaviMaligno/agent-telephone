@@ -125,6 +125,19 @@ class Usage(BaseModel):
     output_tokens: int = 0
     cache_write_tokens: int = 0
     cache_read_tokens: int = 0
+    # Output split heuristically rather than reported per turn (Claude Code lead turns, see runner_cc).
+    estimated: bool = False
+
+    @property
+    def total_input(self) -> int:
+        return self.input_tokens + self.cache_write_tokens + self.cache_read_tokens
+
+    def __add__(self, other: Usage) -> Usage:
+        return Usage(input_tokens=self.input_tokens + other.input_tokens,
+                     output_tokens=self.output_tokens + other.output_tokens,
+                     cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+                     cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+                     estimated=self.estimated or other.estimated)
 
 
 class Message(BaseModel):
@@ -161,3 +174,19 @@ class MessageLog:
             return []
         lines = self.path.read_text(encoding="utf-8").splitlines()
         return [Message.model_validate_json(line) for line in lines if line.strip()]
+
+
+def attempt_blocks(messages: list[Message]) -> dict[str, list[list[int]]]:
+    """run id -> row indices per logged attempt (each starts with the brief). Run ids can repeat
+    (re-runs append to the same log); the last block is the latest attempt."""
+    out: dict[str, list[list[int]]] = {}
+    for i, m in enumerate(messages):
+        blocks = out.setdefault(m.run_id, [])
+        if m.distance == 1 and m.direction != "up" or not blocks:
+            blocks.append([])
+        blocks[-1].append(i)
+    return out
+
+
+def latest_attempts(messages: list[Message]) -> list[Message]:
+    return [messages[i] for blocks in attempt_blocks(messages).values() for i in blocks[-1]]

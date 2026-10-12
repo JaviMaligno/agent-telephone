@@ -1,0 +1,186 @@
+id: event_2
+domain: event
+# Fact `text` values are verbatim spans of `brief` (tests enforce it). Endpoint coverage:
+# plan_checks/checks.py maps every fact id to a deterministic check or JUDGE_ONLY.
+brief: |-
+  Hola, it's Itzel Huerta, Xóchitl's sister — I'm organising her wedding to Eero. It's on Saturday 12 September 2026 at Quinta do Covelo Velho, outside Porto, and we're expecting ninety-six guests. The ceremony is in the chapel at 16:00, cocktails in the olive grove from 17:15, dinner at 19:30, and the last shuttle back to the hotel leaves at 01:30.
+
+  The ceremony is in Spanish and Finnish, and Päivikki Järvenpää is interpreting into Finnish, so she needs a microphone. Eero's grandmother, Aino-Kaarina Väänänen, is the guest of honour.
+
+  Catering: absolutely no nuts, not even almonds in the cake, because Eero's nephew carries an EpiPen. We have eleven vegetarians and four children's meals.
+
+  Photos: do not book Lumière Fotografia, they double-booked my cousin's wedding last summer. Music: no "Macarena", whatever the DJ says.
+
+  Print the menu cards in Spanish and English, and add Finnish only if more than 25 of Eero's family say they're coming.
+
+  If the forecast says over 32 degrees, move the cocktails from the olive grove into the wine cellar.
+
+  The budget cap is €42,000 all in, and it's hard. If the budget is tight, cut the fireworks before the interpreter; Eero's family understanding the vows matters more than the show. And if the ceremony starts late, shorten the cocktails, never the ceremony.
+
+  Oh, and Aino-Kaarina is hard of hearing, so seat her right next to Päivikki in the front row. And the couple's dog, Pimienta, is the ring bearer, so tell the quinta a dog is coming.
+
+facts:
+  - {id: w_date, type: number, text: "Saturday 12 September 2026",
+     # dates are canonicalised to ISO; the year is required
+     check: {kind: regex, pattern: '\b2026-09-12\b', slot: '(?P<value>\b\d{4}-\d{2}-\d{2}\b)'}}
+  - {id: w_venue, type: name, text: "Quinta do Covelo Velho",
+     check: {kind: fuzzy, pattern: Quinta do Covelo Velho}}
+  - {id: w_guests, type: number, text: "ninety-six guests",
+     check: {kind: regex, pattern: '\b96\b', ignore: ['25'],
+            slot: '(?P<value>\b\d[\d,]*)[ \t]+(?:\w+[ \t]+){0,2}?(?:guests|people|attendees|covers|pax)\b|\b(?:guests?|guest count|headcount|attendees)\b[ \t]*[:=-]?[ \t]*(?P<value2>\d[\d,]*)'}}
+  - {id: w_ceremony, type: number, text: "The ceremony is in the chapel at 16:00",
+     # the time is matched deterministically; the place (chapel) is judged
+     check: {kind: regex, pattern: '\b16:00\b', also_judge: true,
+            slot: '\bceremony\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+ceremony\b'}}
+  - {id: w_dinner, type: number, text: "dinner at 19:30",
+     check: {kind: regex, pattern: '\b19:30\b',
+            slot: '\bdinner\b[^.\n]{0,30}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+dinner\b'}}
+  - {id: w_shuttle, type: number, text: "the last shuttle back to the hotel leaves at 01:30",
+     check: {kind: regex, pattern: '\b01:30\b',
+            slot: '\bshuttles?\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:last[ \t]+)?shuttles?\b'}}
+  - {id: w_interpreter, type: name, text: "Päivikki Järvenpää is interpreting into Finnish",
+     check: {kind: fuzzy, pattern: Päivikki Järvenpää, aliases: [Paivikki Jarvenpaa]}}
+  - {id: w_grandmother, type: name, text: "Eero's grandmother, Aino-Kaarina Väänänen, is the guest of honour",
+     check: {kind: fuzzy, pattern: Aino-Kaarina Väänänen, aliases: [Aino-Kaarina Vaananen]}}
+  - {id: w_no_nuts, type: negation, text: "absolutely no nuts, not even almonds in the cake",
+     check: {kind: judge}}
+  - {id: w_rat_nuts, type: rationale, text: "because Eero's nephew carries an EpiPen",
+     check: {kind: judge}}
+  - {id: w_diet, type: number, text: "We have eleven vegetarians and four children's meals.",
+     check: {kind: regex, pattern: '\b11 vegetarians?\b[^.\n]*\b4 children',
+            slot: ['(?P<value>\b\d+)[ \t]+vegetarians?\b|\bvegetarians?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)',
+                   '(?P<value>\b\d+)[ \t]+(?:children|kids)\b|\b(?:children|kids)(?:''s)?(?:[ \t]+meals?)?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)']}}
+  - {id: w_no_lumiere, type: negation, text: "do not book Lumière Fotografia",
+     check: {kind: judge}}
+  - {id: w_rat_lumiere, type: rationale, text: "they double-booked my cousin's wedding last summer",
+     check: {kind: judge}}
+  - {id: w_no_macarena, type: negation, text: "no \"Macarena\", whatever the DJ says",
+     check: {kind: judge}}
+  - {id: w_cond_cards, type: conditional,
+     text: "Print the menu cards in Spanish and English, and add Finnish only if more than 25 of Eero's family say they're coming.",
+     check: {kind: judge}}
+  - {id: w_cond_heat, type: conditional,
+     text: "If the forecast says over 32 degrees, move the cocktails from the olive grove into the wine cellar.",
+     check: {kind: judge}}
+  - {id: w_budget, type: number, text: "The budget cap is €42,000 all in",
+     check: {kind: regex, pattern: '\b42,?000\b',
+            slot: '\b(?:budget|cap)\b[^.\n\d]{0,30}?(?P<value>\d[\d,]*(?:\.\d+)?)|(?P<value2>\b\d[\d,]*(?:\.\d+)?)[ \t]*(?:eur|euros?|€)?[ \t]+(?:budget|cap)\b'}}
+  - {id: w_priority_interp, type: priority,
+     text: "If the budget is tight, cut the fireworks before the interpreter; Eero's family understanding the vows matters more than the show.",
+     check: {kind: judge}}
+  - {id: w_priority_late, type: priority, text: "if the ceremony starts late, shorten the cocktails, never the ceremony",
+     check: {kind: judge}}
+  - {id: w_low_hearing, type: low_salience,
+     text: "Aino-Kaarina is hard of hearing, so seat her right next to Päivikki in the front row.",
+     check: {kind: judge}}
+  - {id: w_low_dog, type: low_salience,
+     text: "the couple's dog, Pimienta, is the ring bearer, so tell the quinta a dog is coming.",
+     check: {kind: judge}}
+
+roles:
+  - id: am
+    title: account manager
+    instructions: >-
+      You are the only person who talks to the client. Brief the logistics coordinator on
+      the event; they will not see the client's message unless you pass it on.
+  - id: logistics
+    title: logistics coordinator
+    instructions: >-
+      Plan the event's logistics (timings, venue, seating, catering, music, budget, contingencies)
+      from what you receive, and brief the vendor liaison, who deals with the caterer, the
+      venue, the photographer and the DJ and only sees your message.
+  - id: vendor
+    title: vendor liaison
+    instructions: |-
+      You book the caterer, the venue, the photographer and the DJ and write the final event plan.
+      The agency's default wedding photographer is Lumière Fotografia (framework rates); book them
+      unless you were told otherwise.
+      The final plan is one JSON object with exactly this shape (times "HH:MM", date
+      "YYYY-MM-DD", money in EUR):
+      {"event_name": str, "date": str, "guest_count": int,
+       "venue": {"name": str, "ceremony_location": str, "cocktail_location": str},
+       "schedule": {"ceremony_start": str, "cocktails_start": str, "dinner_start": str, "last_shuttle": str},
+       "people": [{"name": str, "role": str}],
+       "seating": {"front_row": [str, ... from left to right], "notes": str},
+       "catering": {"excluded_allergens": [str], "menu": [{"course": str, "dish": str, "contains": [str]}],
+                    "dietary_counts": {"vegetarian": int, "children": int}},
+       "menu_cards": {"languages": [str], "add_finnish_if_over": int or null},
+       "music": {"banned_songs": [str]},
+       "photographer": str,
+       "contingency": {"heat": {"threshold_celsius": int or null, "location": str or null},
+                       "late_ceremony": "shorten_cocktails" | "shorten_ceremony"},
+       "budget": {"cap_eur": number, "total_eur": number,
+                  "cut_order": [items from "fireworks", "interpreter", "flowers", "photo_booth", "late_bar", first cut first]},
+       "venue_notes": [str]}
+
+noise:
+  - id: asr_interpreter
+    kind: asr_name
+    affected_fact_ids: [w_interpreter, w_low_hearing]
+    wrong_reading: Pavicky Yarvenpa
+    wrong_pattern: '\bPavicky\b|\bYarvenpa\b'
+    wrong_context: '\b(?:interpret\w*|Finnish|microphone|front|seat\w*|hearing)'
+    repairable: false
+    brief: |-
+      Hola, it's Itzel Huerta, Xóchitl's sister — I'm organising her wedding to Eero. It's on Saturday 12 September 2026 at Quinta do Covelo Velho, outside Porto, and we're expecting ninety-six guests. The ceremony is in the chapel at 16:00, cocktails in the olive grove from 17:15, dinner at 19:30, and the last shuttle back to the hotel leaves at 01:30.
+
+      The ceremony is in Spanish and Finnish, and Pavicky Yarvenpa is interpreting into Finnish, so she needs a microphone. Eero's grandmother, Aino-Kaarina Väänänen, is the guest of honour.
+
+      Catering: absolutely no nuts, not even almonds in the cake, because Eero's nephew carries an EpiPen. We have eleven vegetarians and four children's meals.
+
+      Photos: do not book Lumière Fotografia, they double-booked my cousin's wedding last summer. Music: no "Macarena", whatever the DJ says.
+
+      Print the menu cards in Spanish and English, and add Finnish only if more than 25 of Eero's family say they're coming.
+
+      If the forecast says over 32 degrees, move the cocktails from the olive grove into the wine cellar.
+
+      The budget cap is €42,000 all in, and it's hard. If the budget is tight, cut the fireworks before the interpreter; Eero's family understanding the vows matters more than the show. And if the ceremony starts late, shorten the cocktails, never the ceremony.
+
+      Oh, and Aino-Kaarina is hard of hearing, so seat her right next to Pavicky in the front row. And the couple's dog, Pimienta, is the ring bearer, so tell the quinta a dog is coming.
+  - id: homophone_children
+    kind: homophone
+    affected_fact_ids: [w_diet]
+    wrong_reading: "no children's meal count ('four' heard as 'for'): the meals read as being for children"
+    wrong_pattern: '\bfor[ \t]+children(?:''s)?[ \t]+meals?\b|\bchildren(?:''s)?[ \t]+meals?\b[ \t]*[:=-]?[ \t]*(?:0|none|unknown|unspecified|tbc)\b|\b(?:0|no)[ \t]+children(?:''s)?[ \t]+meals?\b'
+    wrong_context: '\b(?:children|kids?|meals?|menu|dietary|vegetarians?)\b'
+    brief: |-
+      Hola, it's Itzel Huerta, Xóchitl's sister — I'm organising her wedding to Eero. It's on Saturday 12 September 2026 at Quinta do Covelo Velho, outside Porto, and we're expecting ninety-six guests. The ceremony is in the chapel at 16:00, cocktails in the olive grove from 17:15, dinner at 19:30, and the last shuttle back to the hotel leaves at 01:30.
+
+      The ceremony is in Spanish and Finnish, and Päivikki Järvenpää is interpreting into Finnish, so she needs a microphone. Eero's grandmother, Aino-Kaarina Väänänen, is the guest of honour.
+
+      Catering: absolutely no nuts, not even almonds in the cake, because Eero's nephew carries an EpiPen. We have eleven vegetarians and for children's meals.
+
+      Photos: do not book Lumière Fotografia, they double-booked my cousin's wedding last summer. Music: no "Macarena", whatever the DJ says.
+
+      Print the menu cards in Spanish and English, and add Finnish only if more than 25 of Eero's family say they're coming.
+
+      If the forecast says over 32 degrees, move the cocktails from the olive grove into the wine cellar.
+
+      The budget cap is €42,000 all in, and it's hard. If the budget is tight, cut the fireworks before the interpreter; Eero's family understanding the vows matters more than the show. And if the ceremony starts late, shorten the cocktails, never the ceremony.
+
+      Oh, and Aino-Kaarina is hard of hearing, so seat her right next to Päivikki in the front row. And the couple's dog, Pimienta, is the ring bearer, so tell the quinta a dog is coming.
+  - id: punct_cards
+    kind: punct
+    affected_fact_ids: [w_cond_cards]
+    wrong_reading: "Finnish menu cards are always printed; the condition is cut off into a fragment of its own"
+    wrong_pattern: '\b(?:cards?|print\w*)\b[^.\n]{0,40}?\b(?:spanish|english)\b[^.\n]{0,30}?\b(?:and|,)[ \t]+(?:add[ \t]+)?finnish\b(?![^.\n]{0,40}?(?:\b(?:if|when|once|provided|unless|only|as long as)\b|>[ \t]*25|\b(?:more than|over|above|at least)[ \t]+25\b))'
+    wrong_context: '\b(?:menu|cards?|languages?|print\w*)\b'
+    brief: |-
+      Hola, it's Itzel Huerta, Xóchitl's sister — I'm organising her wedding to Eero. It's on Saturday 12 September 2026 at Quinta do Covelo Velho, outside Porto, and we're expecting ninety-six guests. The ceremony is in the chapel at 16:00, cocktails in the olive grove from 17:15, dinner at 19:30, and the last shuttle back to the hotel leaves at 01:30.
+
+      The ceremony is in Spanish and Finnish, and Päivikki Järvenpää is interpreting into Finnish, so she needs a microphone. Eero's grandmother, Aino-Kaarina Väänänen, is the guest of honour.
+
+      Catering: absolutely no nuts, not even almonds in the cake, because Eero's nephew carries an EpiPen. We have eleven vegetarians and four children's meals.
+
+      Photos: do not book Lumière Fotografia, they double-booked my cousin's wedding last summer. Music: no "Macarena", whatever the DJ says.
+
+      Print the menu cards in Spanish and English and add Finnish. Only if more than 25 of Eero's family say they're coming.
+
+      If the forecast says over 32 degrees, move the cocktails from the olive grove into the wine cellar.
+
+      The budget cap is €42,000 all in, and it's hard. If the budget is tight, cut the fireworks before the interpreter; Eero's family understanding the vows matters more than the show. And if the ceremony starts late, shorten the cocktails, never the ceremony.
+
+      Oh, and Aino-Kaarina is hard of hearing, so seat her right next to Päivikki in the front row. And the couple's dog, Pimienta, is the ring bearer, so tell the quinta a dog is coming.
+
+# "Aino-Kaarina next to Päivikki" can only pass if both are named right in the front row.
+endpoint: {kind: plan_checks, path: plan_checks, depends: {w_low_hearing: [w_grandmother, w_interpreter]}}

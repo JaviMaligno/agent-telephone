@@ -209,3 +209,70 @@ def test_hub_relay_with_four_roles_targets_the_last_role():
     agents = runner_cc.agents_json(sc, cond)
     assert set(agents) == {"pm", "implementer"}
     assert runner_cc.routes("hub_relay", [r.id for r in sc.roles]) == {"lead": ["pm", "implementer"]}
+
+
+def _out(hops):
+    return [(h.kind, h.sender, h.receiver, h.usage.output_tokens, h.usage.estimated) for h in hops[1:]]
+
+
+def test_hier_capture_usage_per_turn():
+    """Snapshots carry stub output counts (1-16); each hop gets its turn's real output, and the
+    hops add up to the run's `modelUsage` output exactly."""
+    events = runner_cc.read_stream(HIER)
+    hops = runner_cc.parse_stream(events, "brief")
+    assert _out(hops) == [
+        ("delegate", "lead", "pm", 168, True),          # lead turns: result.usage (267) split by content
+        ("delegate", "pm", "implementer", 195, False),  # per-model remainder (task_progress gave only 17)
+        ("return", "implementer", "pm", 57, False),     # task_notification total - turn input
+        ("return", "pm", "lead", 57, False),            # tool_use_result.usage wins over the notification (65)
+        ("final", "lead", "user", 99, True)]
+    result = next(e for e in events if e.get("type") == "result")
+    assert sum(h.usage.output_tokens for h in hops) == result["modelUsage"]["claude-haiku-5-5"]["outputTokens"] == 576
+    pm = hops[2].usage  # cache is no longer folded into input_tokens
+    assert (pm.input_tokens, pm.cache_write_tokens, pm.cache_read_tokens) == (2, 2614, 0)
+
+
+def test_hub_capture_usage_matches_model_usage():
+    events = runner_cc.read_stream(HUB)
+    hops = runner_cc.parse_stream(events, "brief")
+    assert [h.usage.output_tokens for h in hops if h.kind == "return"] == [1677, 1365]  # tool_use_result.usage
+    assert sum(h.usage.output_tokens for h in hops) == 4531
+
+
+def _asst(mid, ctx, block, out=3, inp=(2, 100, 0), model="claude-haiku-5-5"):
+    return {"type": "assistant", "parent_tool_use_id": ctx, "message": {
+        "id": mid, "model": model, "content": [block],
+        "usage": {"input_tokens": inp[0], "cache_creation_input_tokens": inp[1], "cache_read_input_tokens": inp[2],
+                  "output_tokens": out}}}
+
+
+def test_turn_usage_dedupes_streamed_snapshots():
+    call = {"type": "tool_use", "id": "t1", "name": "Agent", "input": {"subagent_type": "pm", "prompt": "do it",
+                                                                        "description": "d"}}
+    text = {"type": "text", "text": "done " * 50}
+    events = [
+        _asst("m1", None, {"type": "thinking", "thinking": ""}), _asst("m1", None, call), _asst("m1", None, call),
+        {"type": "system", "subtype": "task_progress", "tool_use_id": "t1", "description": "x", "usage": {"total_tokens": 1}},
+        _asst("m2", "t1", text, inp=(2, 50, 0)), _asst("m2", "t1", text, inp=(2, 50, 0)),  # duplicate snapshot
+        {"type": "system", "subtype": "task_notification", "tool_use_id": "t1", "usage": {"total_tokens": 552}},
+        {"type": "user", "parent_tool_use_id": None, "tool_use_result": {"usage": {
+            "input_tokens": 2, "cache_creation_input_tokens": 50, "output_tokens": 480}},
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "done"}]}},
+        _asst("m3", None, text, inp=(2, 10, 100)), _asst("m3", None, text, inp=(2, 10, 100)),
+        {"type": "result", "usage": {"input_tokens": 4, "cache_creation_input_tokens": 110, "cache_read_input_tokens": 100,
+                                     "output_tokens": 300},
+         "modelUsage": {"claude-haiku-5-5": {"inputTokens": 6, "cacheCreationInputTokens": 160,
+                                             "cacheReadInputTokens": 100, "outputTokens": 780}}}]
+    usage, turns = runner_cc.turn_usage(events)
+    assert turns == {None: ["m1", "m3"], "t1": ["m2"]}
+    assert usage["m2"].output_tokens == 480 and not usage["m2"].estimated  # reported, not 552 - 52 = 500
+    assert usage["m1"].output_tokens + usage["m3"].output_tokens == 300 and usage["m1"].estimated
+    assert usage["m3"].output_tokens > usage["m1"].output_tokens  # m3 wrote more visible content
+    hops = runner_cc.parse_stream(events, "brief")
+    assert [h.usage.output_tokens for h in hops[1:]] == [usage["m1"].output_tokens, 480, usage["m3"].output_tokens]
+
+
+def test_turn_usage_without_totals_keeps_snapshots_flagged():
+    events = [_asst("m1", None, {"type": "text", "text": "hi"}, out=7)]
+    usage, _ = runner_cc.turn_usage(events)
+    assert usage["m1"].output_tokens == 7 and usage["m1"].estimated

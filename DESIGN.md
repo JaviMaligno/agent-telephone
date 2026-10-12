@@ -212,3 +212,26 @@ Scoring stack:
   checks on canonical text with slots and all-match semantics; polarity/behaviour facts also
   judged; machine-checkable noise patterns with `flagged`/context-based `amplify`;
   fail-closed budget ledger; sandboxed endpoint execution.
+- 2026-10-12 — **post-data instrument fixes** (after the first 45 Claude Code pilot runs; a hand audit
+  of 198 labels found ~15% systematic errors, so the deterministic H1/H7 numbers before this entry are
+  void). Scoring: the exact pattern now wins over slots (a slot conflict counts only in the sentence
+  that carries the match, and not when the expected value is also in that sentence); `f_first` /
+  `f_second` are anchored on the 48 h / 2 h offset instead of the ordinal (the 48 of "the 48-hour
+  point" and of the priority sentence excluded); in a noisy run the variant's `wrong_pattern` on an
+  affected fact is `distorted` (before the accent/fuzzy fallback), so ASR names are no longer `lost`;
+  code/JSON is canonicalised (`\uXXXX` escapes, quoted keys, `timedelta(hours=N)`, `time(H, M)`,
+  `X_HOUR = H`, `hour >= H`); event slots are underscore-tolerant (`dinner_start`), need a connector
+  (at/from/start/:) next to the time, the date slot needs a date/event anchor, and the guest slot no
+  longer skips numbers. Noise classes: doubt must be about the name in the hit's own sentence (a
+  "confirm" about the venue is not `flagged`); code lines and fenced blocks are not prose (a reading
+  only there is `freeze`); the ASR contexts accept `SIG_` / "ends with" / seating. H7: the
+  noise-affected facts of noisy runs are excluded from the main table and reported per fact, flagged;
+  a forward note that repeats its attachment's noise reading is not a contradiction (`noise_reading`).
+  Endpoint checks (no runs yet for scenarios 2/3): every event budget check asserts only the cap (an
+  honest "no quotes yet" total of 0/null passed nothing before); `total <= cap` is an untagged
+  consistency check outside the score; event_3's coffee/panel checks accept "foyer of the Aula" and
+  "all sessions except the panel", and its overflow threshold is 260 (> 238 registered, so not booking
+  is right under every reading, homophone included); software_2's hidden tests put NOW and period_end
+  at the same time of day (any day-count convention gives 15/10 days); the punct wrong patterns of
+  event_2/event_3 no longer count correct paraphrases ("when more than 25", "not to be streamed").
+  Real spans from the audit are regression fixtures in `tests/test_real_spans.py`.

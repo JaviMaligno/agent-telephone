@@ -142,3 +142,33 @@ def test_forward_notes_are_scored_as_contradiction(scenario, tmp_path):
                                                                                     view="note")[0])}
     assert rows[2]["contradiction_rate"] == 0 and rows[2]["silent_rate"] == 1  # a silent note is not a loss
     assert rows[3]["contradicted"] == 1  # the note contradicts the attachment (124 vs 142)
+
+
+import pytest  # noqa: E402
+
+SCENARIO_DIRS = sorted(p.parent for p in PILOTS.glob("*/scenario.yaml"))
+
+
+@pytest.mark.parametrize("sdir, noise", [(d, n.id) for d in SCENARIO_DIRS for n in Scenario.load(d).noise],
+                         ids=lambda x: x.name if isinstance(x, Path) else x)
+def test_relaying_the_noisy_brief_verbatim_is_freeze(sdir, noise):
+    """Every variant's wrong reading sits in its own context in the noisy brief: a lead that passes
+    the brief on unquestioned freezes each affected fact (no amplify, nothing flagged)."""
+    sc = Scenario.load(sdir)
+    affected = next(n for n in sc.noise if n.id == noise).affected_fact_ids
+    assert _pilot_classes(sdir.name, noise, [sc.source_brief(noise)]) == [(f, "freeze") for f in affected]
+
+
+# --- punct wrong patterns: correct paraphrases are repairs, not the wrong reading -------------
+
+@pytest.mark.parametrize("sid, noise, note, wrong", [
+    ("event_2", "punct_cards", "Menu cards: Spanish and English, add Finnish when more than 25 of Eero's family confirm.", 0),
+    ("event_2", "punct_cards", "Print menu cards in Spanish and English, and Finnish provided over 25 Finnish relatives attend.", 0),
+    ("event_2", "punct_cards", "Print the menu cards in Spanish and English and add Finnish.", 1),
+    ("event_3", "punct_record", "Do not record the afternoon panel; it is not to be streamed either.", 0),
+    ("event_3", "punct_record", "Do not stream the afternoon panel live.", 0),
+    ("event_3", "punct_record", "The afternoon panel will be streamed live.", 1),
+])
+def test_punct_paraphrases(sid, noise, note, wrong):
+    v = next(n for n in Scenario.load(PILOTS / sid).noise if n.id == noise)
+    assert analysis.wrong_reading(note, v.wrong_pattern, v.wrong_context)[0] == wrong

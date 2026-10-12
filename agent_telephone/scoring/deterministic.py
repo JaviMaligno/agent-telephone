@@ -12,15 +12,21 @@ Decisions (see DESIGN §6):
 - **An accent drop is `distorted`, not `preserved`**: "Siobhan Ni Dhuill" for "Siobhán Ní Dhúill"
   is a wrong name. This holds even when the accent-folded form is listed in `aliases`; aliases
   that differ by more than diacritics (e.g. a short form) count as preserved.
+- Code and JSON (endpoint artifacts, hand-backs that relay them) are read like prose: `\\uXXXX`
+  escapes are decoded and quoted keys unquoted for every fact (`prep`); for numbers `canon` also
+  maps `timedelta(hours=48)` / `X_HOURS = 48` -> "48 hours", `time(21, 0)` / `X_HOUR = 21` -> 21:00 and
+  `hour >= 21` / `8 <= local.hour` -> "hour >= 21:00" / "08:00 <= local.hour".
 - Slots: every slot regex is searched for **all** its matches (values listed in `ignore` are
-  skipped). A slot is preserved if any match carries the expected value, distorted if it matched
-  but never with the expected value, missing otherwise. With several slots (independent parts,
-  any order/line): all preserved -> preserved; any distorted or some missing -> distorted;
-  all missing -> the fallback below. The expected value is the slot's (unique) value on the
-  clean brief.
-- Fallback without a slot match: exact pattern/alias anywhere -> preserved; accent-folded match ->
-  distorted; for `name` facts with a literal target, a rapidfuzz near match (>= threshold)
-  -> distorted; otherwise lost.
+  skipped). A slot is preserved if any match carries the expected value; a match with another
+  value is a conflict unless the expected value is also mentioned in the same sentence ("€18,500
+  hard cap, leaving about €600"). The expected value is the slot's (unique) value on the clean brief.
+- Precedence: the exact pattern/alias wins. If it matches, the fact is preserved unless a slot
+  conflicts **in the sentence that carries the match** (stray values elsewhere never count). Without
+  it: all slots preserved -> preserved; any conflict, or some preserved and some missing (partial)
+  -> distorted; all missing -> the fallback below.
+- Fallback: in a noisy run, the variant's `wrong_pattern` for an affected fact -> distorted (the
+  wrong reading is present, e.g. an ASR-mangled name); accent-folded match -> distorted; for `name`
+  facts with a literal target, a rapidfuzz near match (>= threshold) -> distorted; otherwise lost.
 - Numbers compare by value (1,500 == 1500 == 1500.0; times like 17:45 compare literally);
   a unit written next to the number in the slot must match too.
 - Deterministic scoring never emits `inverted`: polarity is the judge's job (`also_judge`).
@@ -83,9 +89,30 @@ def _ampm(h: str, mi: str | None, ap: str) -> str:
     return f"{h:02d}:{mi or '00'}"
 
 
+SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n+")
+
+
+def prep(text: str) -> str:
+    """NFC, `\\uXXXX` escapes decoded, quoted dict/JSON keys unquoted (`"dinner_start": ` ->
+    `dinner_start: `), so code and JSON read like prose. Idempotent."""
+    t = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m[1], 16)), text)
+    t = re.sub(r"[\"'](\w+)[\"']\s*:", r"\1:", t)
+    return unicodedata.normalize("NFC", t)
+
+
+def _hhmm(h: str, m: str | None = None) -> str:
+    return f"{int(h):02d}:{int(m or 0):02d}"
+
+
 def canon(text: str) -> str:
     """Number-normalised text (see module docstring). Idempotent."""
-    t = unicodedata.normalize("NFC", text)
+    t = prep(text)
+    t = re.sub(r"\btime\(\s*(?:hour\s*=\s*)?(\d{1,2})\s*(?:,\s*(?:minute\s*=\s*)?(\d{1,2})\s*)?\)",
+               lambda m: _hhmm(m[1], m[2]), t)  # time(21, 0)
+    t = re.sub(r"(?<![^\W_])hours\s*=\s*(\d+)\b", r"hours: \1 hours", t, flags=re.I)  # timedelta(hours=48), X_HOURS = 48
+    t = re.sub(r"(?<![^\W_])hour\s*=\s*(\d{1,2})\b(?![:.]\d)", lambda m: f"hour: {_hhmm(m[1])}", t, flags=re.I)
+    t = re.sub(r"(?<![^\W_])hour\s*(>=|<=|==|>|<)\s*(\d{1,2})\b(?![:.]\d)", lambda m: f"hour {m[1]} {_hhmm(m[2])}", t)
+    t = re.sub(r"(?<![\d:.])\b(\d{1,2})\s*(<=|>=|<|>)\s*(?=(?:\w+\.)?hour\b)", lambda m: f"{_hhmm(m[1])} {m[2]} ", t)
     t = NUMBER_WORDS.sub(lambda m: m.group(0) if m.group(0).lower() == "one" else str(words_to_int(m.group(0))), t)
     t = re.sub(r"\b(\d{1,2})[:.h](\d{2})\s*([ap])\.?m\.?(?!\w)", lambda m: _ampm(m[1], m[2], m[3]), t, flags=re.I)
     t = re.sub(r"\b(\d{1,2})\s*([ap])\.?m\.?(?!\w)", lambda m: _ampm(m[1], None, m[2]), t, flags=re.I)
@@ -148,12 +175,14 @@ def needs_judge(fact: Fact) -> bool:
 
 
 class FactMatcher:
-    def __init__(self, fact: Fact, brief: str, fuzzy_threshold: float = 85.0):
+    def __init__(self, fact: Fact, brief: str, fuzzy_threshold: float = 85.0, wrong: dict[str, str] | None = None):
         self.fact, self.threshold = fact, fuzzy_threshold
         c = fact.check
         self.numeric = fact.type == "number"
         self.literal = None if c.kind == "regex" else (c.pattern or fact.text)
         self.aliases = [a for a in c.aliases if self.literal is None or fold(a) != fold(self.literal)]
+        # noise id -> wrong_pattern of that variant, for variants that affect this fact
+        self.wrong = {k: re.compile(v, re.I) for k, v in (wrong or {}).items()}
         slots = [c.slot] if isinstance(c.slot, str) else (c.slot or [])
         self.slots = [re.compile(s, re.I) for s in slots]
         self.expected = []
@@ -166,7 +195,7 @@ class FactMatcher:
             self.expected.append(next(iter(values)))
 
     def _text(self, text: str) -> str:
-        return canon(text) if self.numeric else unicodedata.normalize("NFC", text)
+        return canon(text) if self.numeric else prep(text)
 
     def _key(self, value: str):
         return tuple(_numbers(value)) if self.numeric and _numbers(value) else fold(value)
@@ -184,6 +213,14 @@ class FactMatcher:
             return bool(exp) and got[: len(exp)] == exp and (_unit(expected) in ("", _unit(value)))
         return any(_contains(norm(t), norm(value)) for t in [expected, *self.aliases])
 
+    def _mentions(self, expected: str, value: str, sentence: str) -> bool:
+        """The slot caught another number while the expected one sits elsewhere in the sentence
+        ("€18,500 hard cap, leaving about €600"). A right number with a wrong unit still conflicts."""
+        if self.numeric and (exp := _numbers(expected)):
+            got = _numbers(sentence)
+            return _numbers(value)[: len(exp)] != exp and all(x in got for x in exp)
+        return any(_contains(norm(t), norm(sentence)) for t in [expected, *self.aliases])
+
     def _exact(self, text: str) -> str | None:
         if self.literal is None:
             m = re.search(self.fact.check.pattern, text, re.I)
@@ -194,30 +231,37 @@ class FactMatcher:
                 return m.group(0)
         return None
 
+    def _slot_state(self, slot: re.Pattern, exp: str, text: str) -> tuple[str, str | None]:
+        """preserved / conflict / missing for one slot over `text`, with the offending value."""
+        hits = [(v, sent) for sent in SENTENCE.split(text) for v in self._slot_values(slot, sent)]
+        if any(self._same(exp, v) for v, _ in hits):
+            return "preserved", None
+        bad = [v for v, sent in hits if not self._mentions(exp, v, sent)]
+        return ("conflict", bad[0]) if bad else ("missing", None)
+
     def _slots_label(self, text: str) -> tuple[str, str] | None:
-        states, ev = [], []
-        for slot, exp in zip(self.slots, self.expected):
-            values = self._slot_values(slot, text)
-            if any(self._same(exp, v) for v in values):
-                states.append("preserved")
-            elif values:
-                states.append("distorted")
-                ev.append(f"slot value {values[0]!r} (expected {exp!r})")
-            else:
-                states.append("missing")
-                ev.append(f"slot for {exp!r} missing")
-        if all(s == "missing" for s in states):
+        states = [self._slot_state(slot, exp, text) for slot, exp in zip(self.slots, self.expected)]
+        if all(s == "missing" for s, _ in states):
             return None
-        if all(s == "preserved" for s in states):
+        if all(s == "preserved" for s, _ in states):
             return "preserved", f"slot value(s) {self.expected!r}"
+        ev = [f"slot value {v!r} (expected {e!r})" if s == "conflict" else f"slot for {e!r} missing"
+              for (s, v), e in zip(states, self.expected) if s != "preserved"]
         return "distorted", "; ".join(ev)
 
-    def label(self, text: str) -> tuple[str, str | None]:
+    def label(self, text: str, noise: str | None = None) -> tuple[str, str | None]:
         text = self._text(text)
+        if span := self._exact(text):
+            for sent in (s for s in SENTENCE.split(text) if self._exact(s)):
+                for slot, exp in zip(self.slots, self.expected):
+                    state, value = self._slot_state(slot, exp, sent)
+                    if state == "conflict":
+                        return "distorted", f"slot value {value!r} (expected {exp!r}) next to {span!r}"
+            return "preserved", span
         if self.slots and (lab := self._slots_label(text)):
             return lab
-        if span := self._exact(text):
-            return "preserved", span
+        if noise in self.wrong and (m := self.wrong[noise].search(canon(text))):
+            return "distorted", f"noise reading {m.group(0)!r}"
         if self.literal is not None:
             if m := _contains(fold(self.literal), fold(text)):
                 return "distorted", f"diacritics differ: {m.group(0)!r}"
@@ -233,16 +277,18 @@ class DeterministicScorer:
 
     def __init__(self, scenario: Scenario, fuzzy_threshold: float = 85.0):
         self.scenario = scenario
-        self.matchers = {f.id: FactMatcher(f, scenario.brief, fuzzy_threshold)
+        wrong = lambda fid: {n.id: n.wrong_pattern for n in scenario.noise if fid in n.affected_fact_ids}  # noqa: E731
+        self.matchers = {f.id: FactMatcher(f, scenario.brief, fuzzy_threshold, wrong(f.id))
                          for f in scenario.facts if is_deterministic(f)}
         for fid, m in self.matchers.items():
             if m.label(scenario.brief)[0] != "preserved":
                 raise ValueError(f"check of fact {fid} does not score the clean brief as preserved")
 
-    def label_text(self, text: str) -> dict[str, tuple[str, str | None]]:
-        return {fid: m.label(text) for fid, m in self.matchers.items()}
+    def label_text(self, text: str, noise: str | None = None) -> dict[str, tuple[str, str | None]]:
+        """`noise`: the run's noise variant id; its wrong reading of an affected fact is `distorted`."""
+        return {fid: m.label(text, noise) for fid, m in self.matchers.items()}
 
     def score(self, msg: Message, view: View = "full") -> list[ScoreRow]:
         text = view_text(msg, view)
         return [row(msg, self.scenario.fact(fid), lab, "deterministic", ev, view=view)
-                for fid, (lab, ev) in self.label_text(text).items()]
+                for fid, (lab, ev) in self.label_text(text, msg.condition.noise).items()]

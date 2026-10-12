@@ -186,15 +186,123 @@ class _Call:
     background: bool = False
 
 
-def _usage(msg: dict) -> Usage:
-    u = msg.get("usage") or {}
-    inp = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    return Usage(input_tokens=inp, output_tokens=u.get("output_tokens") or 0)
+def _usage(u: dict | None) -> Usage:
+    u = u or {}
+    return Usage(input_tokens=u.get("input_tokens") or 0, output_tokens=u.get("output_tokens") or 0,
+                 cache_write_tokens=u.get("cache_creation_input_tokens") or 0,
+                 cache_read_tokens=u.get("cache_read_input_tokens") or 0)
 
 
 def _blocks(ev: dict) -> list[dict]:
     content = (ev.get("message") or {}).get("content")
     return content if isinstance(content, list) else []
+
+
+def _split(total: int, floors: list[int], weights: list[int]) -> list[int]:
+    """Split `total` into parts >= floors, the excess proportional to weights (largest remainder)."""
+    extra = max(0, total - sum(floors))
+    w = [max(1, x) for x in weights]
+    raw = [extra * x / sum(w) for x in w]
+    parts = [int(r) for r in raw]
+    for i in sorted(range(len(w)), key=lambda i: parts[i] - raw[i])[: extra - sum(parts)]:
+        parts[i] += 1
+    return [f + p for f, p in zip(floors, parts)]
+
+
+def turn_usage(events: list[dict]) -> tuple[dict[str, Usage], dict[str | None, list[str]]]:
+    """Usage per API message (turn) id, and the turn ids of each context in stream order.
+
+    Assistant events are streamed snapshots carrying the message_start usage: input and cache are
+    right, output_tokens is a stub (2-16). The real output of a turn comes from:
+    1. a subagent's final turn: `tool_use_result.usage` on the caller's tool_result (exact API usage;
+       only for subagents called by the lead), else its `task_notification` `usage.total_tokens`
+       (= that turn's input + output; agreed with the API usage in 71/75 pilot cross-checks, within
+       ~15% otherwise);
+    2. the lead's turns: `result.usage` is their sum;
+    3. any other turn (a subagent's delegating turn): the per-model remainder of
+       `result.modelUsage` once 1. and 2. are subtracted (`task_progress` fires when the Agent call
+       starts, so it only gives a lower bound). Totals are used only when their input tokens match
+       the stream's turns exactly (every API call is in the stream).
+    A total shared by one open turn is exact; several split it above their floors by visible content
+    size (`estimated=True`), as do turns no total covers.
+    """
+    snap: dict[str, Usage] = {}
+    turns: dict[str | None, list[str]] = {}
+    seen_blocks: dict[str, set[str]] = {}
+    weight: dict[str, int] = {}
+    by_desc: dict[tuple[str | None, str], str] = {}
+    progress: list[tuple[str, str, int]] = []
+    notified: dict[str, int] = {}
+    reported: dict[str, Usage] = {}
+    model: dict[str, str] = {}
+    result = None
+    for ev in events:
+        t, st = ev.get("type"), ev.get("subtype")
+        if t == "assistant":
+            msg, ctx = ev["message"], ev.get("parent_tool_use_id")
+            mid, u = msg.get("id"), _usage(msg.get("usage"))
+            if mid not in snap:
+                turns.setdefault(ctx, []).append(mid)
+                snap[mid], seen_blocks[mid], weight[mid], model[mid] = u, set(), 0, msg.get("model", "")
+            snap[mid] = Usage(**{k: max(getattr(u, k), getattr(snap[mid], k)) for k in
+                                 ("input_tokens", "output_tokens", "cache_write_tokens", "cache_read_tokens")})
+            for b in _blocks(ev):  # snapshots may repeat earlier blocks: count each once
+                key = json.dumps(b, sort_keys=True)
+                if key not in seen_blocks[mid]:
+                    seen_blocks[mid].add(key)
+                    weight[mid] += len(b.get("text") or b.get("thinking") or "") + (
+                        len(json.dumps(b.get("input"), ensure_ascii=False)) if b.get("type") == "tool_use" else 0)
+                if b.get("type") == "tool_use":
+                    by_desc[(ctx, (b.get("input") or {}).get("description") or "")] = mid
+        elif t == "system" and st in ("task_progress", "task_notification") and ev.get("tool_use_id"):
+            total = (ev.get("usage") or {}).get("total_tokens")
+            if isinstance(total, int):
+                if st == "task_progress":
+                    progress.append((ev["tool_use_id"], ev.get("description") or "", total))
+                else:
+                    notified[ev["tool_use_id"]] = total
+        elif t == "user" and isinstance(ev.get("tool_use_result"), dict) and ev["tool_use_result"].get("usage"):
+            for b in _blocks(ev):
+                if b.get("type") == "tool_result" and b.get("tool_use_id"):
+                    reported[b["tool_use_id"]] = _usage(ev["tool_use_result"]["usage"])
+        elif t == "result":
+            result = ev
+
+    floor = {mid: u.output_tokens for mid, u in snap.items()}
+    for ctx, desc, total in progress:  # emitted when the call starts: a lower bound for that turn
+        if (mid := by_desc.get((ctx, desc))) is not None:
+            floor[mid] = max(floor[mid], total - snap[mid].total_input)
+    exact: dict[str, int] = {}
+    for ctx, total in notified.items():
+        if turns.get(ctx):
+            exact[turns[ctx][-1]] = total - snap[turns[ctx][-1]].total_input
+    for ctx, u in reported.items():
+        if turns.get(ctx) and u.total_input == snap[turns[ctx][-1]].total_input:
+            exact[turns[ctx][-1]] = u.output_tokens
+    usage = {mid: snap[mid].model_copy(update={"output_tokens": max(o, floor[mid])}) for mid, o in exact.items()}
+    turn_ids = list(snap)  # stream order
+
+    def settle(group: set[str], total: int) -> None:
+        """Give the turns of `group` not yet resolved what is left of `total`."""
+        if not (open_ := [m for m in turn_ids if m in group and m not in usage]):
+            return
+        parts = _split(total - sum(usage[m].output_tokens for m in group if m in usage), [floor[m] for m in open_],
+                       [weight[m] for m in open_])
+        for m, p in zip(open_, parts):
+            usage[m] = snap[m].model_copy(update={"output_tokens": p, "estimated": len(open_) > 1})
+
+    result = result or {}
+    lead, ru = turns.get(None, []), _usage(result.get("usage"))
+    if lead and ru.total_input == sum(snap[m].total_input for m in lead):  # result.usage = the lead's turns
+        settle(set(lead), ru.output_tokens)
+    for name, mu in (result.get("modelUsage") or {}).items():  # the rest: per-model remainder
+        group = {m for m in snap if model[m] == name}
+        if sum(mu.get(k) or 0 for k in ("inputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")) \
+                == sum(snap[m].total_input for m in group):
+            settle(group, mu.get("outputTokens") or 0)
+    for mid in snap.keys() - usage.keys():
+        usage[mid] = snap[mid].model_copy(update={"output_tokens": floor[mid], "estimated": True})
+    return usage, turns
 
 
 def _result_text(block: dict) -> str:
@@ -224,11 +332,13 @@ def parse_stream(events: list[dict], user_prompt: str, lead: str = "lead") -> li
     1 + the distance of the last message its sender had received when it sent it, where
     "received" is placed at the caller's tool_result (foreground) or at the
     task_notification (background), so background runs are ordered causally too.
+    Usage (see `turn_usage`): a delegation carries the turn that wrote the Agent call, a hand-back /
+    final the sum of the writer's other turns in that context.
     """
     calls: dict[str, _Call] = {}
     finals: dict[str | None, tuple[str, list[str], dict]] = {}  # context -> (msg id, texts, msg)
     notified: dict[str, tuple[int, str]] = {}
-    usage: dict[str, Usage] = {}  # per API message; stream snapshots are partial, keep the max
+    usage, turns = turn_usage(events)
     for i, ev in enumerate(events):
         ctx = ev.get("parent_tool_use_id")
         if ev.get("type") == "system" and ev.get("subtype") == "task_started" and ev.get("is_backgrounded"):
@@ -238,9 +348,6 @@ def parse_stream(events: list[dict], user_prompt: str, lead: str = "lead") -> li
             notified.setdefault(ev["tool_use_id"], (i, ev.get("summary") or ""))
         elif ev.get("type") == "assistant":
             msg = ev["message"]
-            u, prev = _usage(msg), usage.get(msg.get("id"), Usage())
-            usage[msg.get("id")] = Usage(input_tokens=max(u.input_tokens, prev.input_tokens),
-                                         output_tokens=max(u.output_tokens, prev.output_tokens))
             for b in _blocks(ev):
                 if b.get("type") == "tool_use" and b.get("name") in AGENT_TOOLS:
                     inp = b.get("input") or {}
@@ -270,6 +377,16 @@ def parse_stream(events: list[dict], user_prompt: str, lead: str = "lead") -> li
     def name(ctx: str | None) -> str:
         return lead if ctx is None else calls[ctx].target
 
+    # usage: a delegation carries the turn that wrote its Agent call (once per turn, even with parallel
+    # calls); a hand-back / final carries every other turn of the writer's context
+    delegating = {c.msg_id for c in calls.values()}
+    first_call = {}
+    for c in sorted(calls.values(), key=lambda c: c.line):
+        first_call.setdefault(c.msg_id, c.id)
+
+    def written(ctx: str | None) -> Usage:
+        return sum((usage[m] for m in turns.get(ctx, []) if m not in delegating), Usage())
+
     hops = [Hop("delegate", topologies.USER, lead, 1, user_prompt, "human", info_distance=1)]
     last: dict[str | None, int] = {None: 1}
     closest: dict[str | None, int] = {None: 1}
@@ -279,18 +396,18 @@ def parse_stream(events: list[dict], user_prompt: str, lead: str = "lead") -> li
         if is_send:
             d, info = last.get(c.owner, 1) + 1, closest.get(c.owner, 1) + 1
             last[cid], closest[cid] = d, info
-            hops.append(Hop("delegate", name(c.owner), c.target, d, c.prompt, c.model, usage[c.msg_id], cid, "down", info))
+            u = usage.get(c.msg_id, Usage()) if first_call[c.msg_id] == cid else Usage()
+            hops.append(Hop("delegate", name(c.owner), c.target, d, c.prompt, c.model, u, cid, "down", info))
         else:
             d, info = last.get(cid, 1) + 1, closest.get(cid, 1) + 1
             last[c.owner], closest[c.owner] = d, min(closest.get(c.owner, info), info)
             _, texts, msg = finals.get(cid, (None, [], {}))
             text = "\n\n".join(texts) if texts else c.result_text
-            hops.append(Hop("return", c.target, name(c.owner), d, text, msg.get("model", ""),
-                            usage.get(msg.get("id"), Usage()), cid, "up", info))
+            hops.append(Hop("return", c.target, name(c.owner), d, text, msg.get("model", ""), written(cid), cid, "up", info))
     if None in finals:
         _, texts, msg = finals[None]
         hops.append(Hop("final", lead, topologies.USER, last[None] + 1, "\n\n".join(texts),
-                        msg.get("model", ""), usage[msg.get("id")], None, "up", closest[None] + 1))
+                        msg.get("model", ""), written(None), None, "up", closest[None] + 1))
     return hops
 
 
