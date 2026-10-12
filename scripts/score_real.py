@@ -311,7 +311,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, help="default: <dir>/scored")
     ap.add_argument("--timeout", type=float, default=120, help="hidden-test timeout per artifact (s)")
     ap.add_argument("--skip-endpoints", action="store_true")
-    ap.add_argument("--judge", choices=["none", "gateway"], default="none")
+    ap.add_argument("--judge", choices=["none", "gateway", "codex"], default="none",
+                    help="codex = GPT on the ChatGPT subscription via codex exec (no spend)")
     ap.add_argument("--judge-model", default="gpt-5.6-sol-tst")
     ap.add_argument("--judge-passes", type=int, default=2, help="note-view passes (2 = second pass for kappa)")
     ap.add_argument("--judge-max-tokens", type=int, default=2048)
@@ -338,20 +339,27 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(plan, indent=1))
         if args.dry_run:
             return
-        if plan["cost_usd"] is None:
+        if args.judge == "codex":
+            pass  # subscription: no spend to cap
+        elif plan["cost_usd"] is None:
             raise SystemExit(f"refusing to run the judge: {plan['cost_note']}")
-        worst = plan["cost_usd"]["worst_with_retries"]
-        if args.max_usd is None or worst > args.max_usd:
+        elif args.max_usd is None or plan["cost_usd"]["worst_with_retries"] > args.max_usd:
+            worst = plan["cost_usd"]["worst_with_retries"]
             raise SystemExit(f"refusing to run the judge: worst case ${worst:.2f} needs --max-usd >= that")
 
     scores, invented = {}, {}
     if plan is not None:
-        judged = run_judge(scenarios, messages, gateway_backend(args), args.judge_model, args.judge_passes,
+        if args.judge == "codex":
+            from agent_telephone.backends.codex_cli import CodexBackend
+            backend = CodexBackend(reasoning_effort=args.reasoning_effort or "medium")
+        else:
+            backend = gateway_backend(args)
+        judged = run_judge(scenarios, messages, backend, args.judge_model, args.judge_passes,
                            args.judge_max_tokens)
         for (view, p), (rows, inv) in judged.items():
             name = view if p == 0 else f"{view}_pass{p}"
             scores[name], invented[name] = rows, inv
-        judge_note = f"{args.judge_model} via gateway, passes {[f'{v}/{p}' for v, p in judge_passes(args.judge_passes)]}"
+        judge_note = f"{args.judge_model} via {args.judge}, passes {[f'{v}/{p}' for v, p in judge_passes(args.judge_passes)]}"
         if "note_pass1" in scores:
             k = kappa_between([r for r in scores["note"] if r.method == "judge"],
                               [r for r in scores["note_pass1"] if r.method == "judge"])
