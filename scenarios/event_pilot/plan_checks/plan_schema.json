@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "required": ["event_name", "date", "guest_count", "venue", "schedule", "vips", "seating", "catering",
+               "bar", "transport", "contingency", "budget", "accessibility"],
+  "properties": {
+    "event_name": {"type": "string"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "guest_count": {"type": "integer"},
+    "venue": {"type": "object", "required": ["name", "reception_location"],
+              "properties": {"name": {"type": "string"}, "reception_location": {"type": "string"}}},
+    "schedule": {"type": "object", "required": ["reception_start", "keynote_end", "dinner_start", "coach_departure"],
+                 "properties": {"reception_start": {"$ref": "#/$defs/hhmm"}, "keynote_end": {"$ref": "#/$defs/hhmm"},
+                                "dinner_start": {"$ref": "#/$defs/hhmm"}, "coach_departure": {"$ref": "#/$defs/hhmm"}}},
+    "vips": {"type": "array", "items": {"type": "object", "required": ["name", "role"],
+                                        "properties": {"name": {"type": "string"}, "role": {"type": "string"}}}},
+    "seating": {"type": "object", "required": ["top_table", "notes"],
+                "properties": {"top_table": {"type": "array", "items": {"type": "string"}}, "notes": {"type": "string"}}},
+    "catering": {"type": "object", "required": ["excluded_allergens", "menu", "dietary_counts"],
+                 "properties": {
+                   "excluded_allergens": {"type": "array", "items": {"type": "string"}},
+                   "menu": {"type": "array", "items": {"type": "object", "required": ["course", "dish", "contains"],
+                            "properties": {"course": {"type": "string"}, "dish": {"type": "string"},
+                                           "contains": {"type": "array", "items": {"type": "string"}}}}},
+                   "dietary_counts": {"type": "object", "required": ["vegetarian", "vegan"],
+                                      "properties": {"vegetarian": {"type": "integer"}, "vegan": {"type": "integer"}}}}},
+    "bar": {"type": "object", "required": ["alcohol_from"], "properties": {"alcohol_from": {"$ref": "#/$defs/hhmm"}}},
+    "transport": {"type": "object", "required": ["provider", "coaches", "second_coach_if_over"],
+                  "properties": {"provider": {"type": "string"}, "coaches": {"type": "integer"},
+                                 "second_coach_if_over": {"type": ["integer", "null"]}}},
+    "contingency": {"type": "object", "required": ["rain", "keynote_overrun"],
+                    "properties": {
+                      "rain": {"type": "object", "required": ["threshold_percent", "location"],
+                               "properties": {"threshold_percent": {"type": ["integer", "null"]},
+                                              "location": {"type": ["string", "null"]}}},
+                      "keynote_overrun": {"enum": ["delay_dinner", "shorten_keynote"]}}},
+    "budget": {"type": "object", "required": ["cap_eur", "total_eur", "cut_order"],
+               "properties": {"cap_eur": {"type": "number"}, "total_eur": {"type": "number"},
+                              "cut_order": {"type": "array", "items": {"enum": ["band", "transport", "flowers",
+                                                                                 "photographer", "late_bar"]}}}},
+    "accessibility": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {"hhmm": {"type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"}}
+}

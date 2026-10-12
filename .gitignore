@@ -1,0 +1,10 @@
+runs/*
+!runs/fake/
+runs/fake/*
+!runs/fake/summary.md
+.venv/
+__pycache__/
+*.ledger.json
+*.ledger.json.lock
+.pytest_cache/
+.env

@@ -1,0 +1,30 @@
+{
+  "event_name": "Halloran Freight annual partner dinner",
+  "date": "2026-11-19",
+  "guest_count": 142,
+  "venue": {"name": "Ardgillan Orangery", "reception_location": "terrace"},
+  "schedule": {"reception_start": "18:30", "keynote_end": "20:30", "dinner_start": "20:45", "coach_departure": "23:15"},
+  "vips": [
+    {"name": "Dr Caoimhe Ní Fhlannagáin", "role": "keynote speaker"},
+    {"name": "Przemysław Grzybowski", "role": "CFO of the biggest partner"},
+    {"name": "Fionnuala Ó Dálaigh", "role": "CEO, Halloran Freight"}
+  ],
+  "seating": {"top_table": ["Fionnuala Ó Dálaigh", "Dr Caoimhe Ní Fhlannagáin", "Przemysław Grzybowski", "Orla"],
+              "notes": "CEO is left-handed: left end of the top table. Wheelchair space at the top table for Przemysław."},
+  "catering": {
+    "excluded_allergens": ["shellfish (including stocks and sauces)"],
+    "menu": [
+      {"course": "starter", "dish": "Beetroot and goat's cheese salad", "contains": ["dairy"]},
+      {"course": "main", "dish": "Roast sirloin of Irish beef, red wine jus", "contains": ["sulphites"]},
+      {"course": "main (vegetarian)", "dish": "Wild mushroom risotto", "contains": ["dairy"]},
+      {"course": "main (vegan)", "dish": "Roast squash and lentil wellington", "contains": ["gluten"]},
+      {"course": "dessert", "dish": "Apple and blackberry crumble", "contains": ["gluten", "dairy"]}
+    ],
+    "dietary_counts": {"vegetarian": 18, "vegan": 4}
+  },
+  "bar": {"alcohol_from": "20:30"},
+  "transport": {"provider": "Murray's Coaches", "coaches": 1, "second_coach_if_over": 90},
+  "contingency": {"rain": {"threshold_percent": 40, "location": "Long Gallery"}, "keynote_overrun": "delay_dinner"},
+  "budget": {"cap_eur": 18500, "total_eur": 17840, "cut_order": ["flowers", "band", "photographer", "transport"]},
+  "accessibility": ["step-free access at all areas, including terrace and Long Gallery", "accessible coach with ramp"]
+}

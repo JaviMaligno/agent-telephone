@@ -1,0 +1,21 @@
+# USD per million tokens, per model id.
+# Values MUST be filled from the official Anthropic price list (and the gateway's
+# pricing for non-Anthropic models) before Phase 3. While a model's input/output price
+# is null, BudgetGuard refuses every call to that model; while cache_write/cache_read are
+# null it refuses prompt-cached calls (and charges any reported cache tokens at 2x / 1x input).
+models:
+  claude-haiku-5-5:
+    input: null
+    output: null
+    cache_write: null
+    cache_read: null
+  claude-sonnet-5-5:
+    input: null
+    output: null
+    cache_write: null
+    cache_read: null
+  gpt-6-luna:
+    input: null
+    output: null
+    cache_write: null
+    cache_read: null

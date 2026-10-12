@@ -1,0 +1,25 @@
+# Phase 0 only: how the FakeBackend's endpoint author "plans what it received" (see the
+# software_pilot twin). Mutations set a JSON path; tests/test_pilot.py checks each one fails
+# its fact's plan check. Mutations apply in file order.
+reference: plan_checks/reference_plan.json
+mutants:
+  e_date: {set: ["date", "2026-11-20"]}
+  e_venue: {set: ["venue.name", "Ardgillan Castle"]}
+  e_guests: {set: ["guest_count", 140]}
+  e_reception: {set: ["schedule.reception_start", "19:00"]}
+  e_dinner: {set: ["schedule.dinner_start", "20:00"]}
+  e_coach_time: {set: ["schedule.coach_departure", "23:45"]}
+  e_speaker: {set: ["vips.0.name", "Dr Keeva Flanagan"]}
+  e_vip_cfo: {set: ["vips.1.name", "Pshemislav Gribovsky"]}
+  e_low_lefty: {set: ["seating.top_table", ["Orla", "Fionnuala Ó Dálaigh"]]}  # before e_ceo: both set top_table, a missing CEO must win
+  e_ceo: {set: ["seating.top_table", ["Dr Caoimhe Ní Fhlannagáin", "Przemysław Grzybowski", "Orla"]]}
+  e_no_shellfish: {set: ["catering.excluded_allergens", ["nuts"]]}
+  e_diet: {set: ["catering.dietary_counts", {"vegetarian": 4, "vegan": 18}]}
+  e_no_alcohol: {set: ["bar.alcohol_from", "18:30"]}
+  e_no_coachline: {set: ["transport.provider", "Coachline"]}
+  e_cond_coach: {set: ["transport.coaches", 2]}
+  e_cond_rain: {set: ["contingency.rain.location", "Terrace marquee"]}
+  e_budget: {set: ["budget.cap_eur", 15000]}
+  e_priority_band: {set: ["budget.cut_order", ["transport", "band"]]}
+  e_priority_keynote: {set: ["contingency.keynote_overrun", "shorten_keynote"]}
+  e_low_step_free: {set: ["accessibility", ["accessible coach with ramp"]]}

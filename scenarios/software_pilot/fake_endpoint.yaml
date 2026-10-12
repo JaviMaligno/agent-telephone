@@ -1,0 +1,24 @@
+# Phase 0 only: how the FakeBackend's endpoint author "implements what it received".
+# It starts from the reference and, for every fact that reached it lost/distorted/inverted
+# (by the injected ground truth), applies that fact's mutation. Each mutation is checked by
+# tests/test_pilot.py to fail the hidden test(s) tagged with its fact.
+reference: reference_solution/notifications.py
+mutants:
+  f_entry: {replace: ["def plan_reminders(", "def plan_notifications("]}
+  f_optout_field: {replace: ['and not appt.get("optout_sms_v2")', 'and not appt.get("opt_out")']}
+  f_first: {replace: ["timedelta(hours=48)", "timedelta(hours=24)"]}
+  f_second: {replace: ["timedelta(hours=2)", "timedelta(hours=1)"]}
+  f_cond_late: {replace: ["times = {first if first > now else now}", "times = {first} if first > now else set()"]}
+  f_no_past: {replace: ["if second > now:", "if True:"]}
+  f_cond_channel: {replace: ['and not appt.get("optout_sms_v2")', 'and appt.get("optout_sms_v2")']}
+  f_no_both: {replace: ["for t in times]", "for t in times] + [{'appointment_id': appt['id'], 'channel': 'email', 'send_at': t, 'text': text} for t in times if channel == 'sms']"]}
+  f_sms_len: {replace: ["SMS_MAX = 160", "SMS_MAX = 10_000"]}
+  f_priority_time: {replace: ['{start:%a %d %b} at {start:%H:%M}', '{start:%a %d %b}']}
+  f_quiet: {replace: ["time(21), time(8), time(20)", "time(23), time(6), time(22)"]}
+  f_no_cancelled: {replace: ['appt.get("status") == "cancelled"', 'appt.get("status") == "canceled"']}
+  f_no_email_log: {replace: ['channel, appt["id"])', 'channel, appt["email"])']}
+  f_signer: {replace: ['SIGNER, SIGNER_PL = "Siobhán Ní Dhuibhir"', 'SIGNER, SIGNER_PL = "Chevonne Nee Divver"']}
+  f_signer_pl: {replace: ['"Grzegorz Szczepański"', '"Grzegorz Szczepanski"']}
+  f_cond_pl: {replace: ['appt.get("country") == "PL"', 'False']}
+  f_low_tz: {replace: ['ZoneInfo("Europe/Dublin")', 'ZoneInfo("UTC")']}
+  f_low_sorted: {replace: ['return sorted(reminders, key=lambda r: r["send_at"])', 'return reminders[::-1]']}

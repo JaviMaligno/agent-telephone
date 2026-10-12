@@ -1,0 +1,181 @@
+id: event_pilot
+domain: event
+# Fact `text` values are verbatim spans of `brief` (tests enforce it). Endpoint coverage:
+# plan_checks/checks.py maps every fact id to a deterministic check or JUDGE_ONLY.
+brief: |-
+  Hi, it's Orla from Halloran Freight, about our annual partner dinner. It's on Thursday 19 November 2026, at the Ardgillan Orangery, and we're expecting a hundred and forty-two guests. Drinks reception on the terrace from 18:30, the keynote runs until 20:30, dinner seated at 20:45, and the coaches back to the city leave at 23:15.
+
+  Our keynote speaker is Dr Caoimhe Ní Fhlannagáin, and Przemysław Grzybowski, the CFO of our biggest partner, needs to be treated as a VIP too. Our CEO, Fionnuala Ó Dálaigh, sits at the top table, obviously.
+
+  Catering: no shellfish, not even in the stock or the sauces, we have a severe allergy in the group. We have 18 vegetarians and 4 vegans. No alcohol before the keynote ends at 20:30; after that the bar's open. That's because the keynote is livestreamed to the partners and last year it got messy.
+
+  Transport: do not book Coachline, they lost our booking last year. One coach; book a second one only if more than 90 guests confirm transport.
+
+  If the forecast the day before shows more than 40% chance of rain, move the reception from the terrace into the Long Gallery.
+
+  The budget cap is €18,500 including VAT, and it's hard. If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music. And if the keynote overruns, push dinner back, don't cut the talk short.
+
+  Oh, and Fionnuala is left-handed, so put her at the left end of the top table. And Przemysław uses a wheelchair, so everything needs step-free access.
+
+facts:
+  - {id: e_date, type: number, text: "Thursday 19 November 2026",
+     # dates are canonicalised to ISO; the year is required
+     check: {kind: regex, pattern: '\b2026-11-19\b', slot: '(?P<value>\b\d{4}-\d{2}-\d{2}\b)'}}
+  - {id: e_venue, type: name, text: "Ardgillan Orangery",
+     check: {kind: fuzzy, pattern: Ardgillan Orangery}}
+  - {id: e_guests, type: number, text: "a hundred and forty-two guests",
+     check: {kind: regex, pattern: '\b142\b', ignore: ['90'],
+            slot: '(?P<value>\b\d[\d,]*)[ \t]+(?:\w+[ \t]+){0,2}?(?:guests|people|attendees|covers|pax)\b|\b(?:guests?|guest count|headcount|attendees)\b[ \t]*[:=-]?[ \t]*(?P<value2>\d[\d,]*)'}}
+  - {id: e_reception, type: number, text: "Drinks reception on the terrace from 18:30",
+     # the time is matched deterministically; the place (terrace) is judged
+     check: {kind: regex, pattern: '\b18:30\b', also_judge: true,
+            slot: '\breception\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:drinks[ \t]+)?reception\b'}}
+  - {id: e_dinner, type: number, text: "dinner seated at 20:45",
+     check: {kind: regex, pattern: '\b20:45\b',
+            slot: '\bdinner\b[^.\n]{0,30}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:seated[ \t]+)?dinner\b'}}
+  - {id: e_coach_time, type: number, text: "the coaches back to the city leave at 23:15",
+     check: {kind: regex, pattern: '\b23:15\b',
+            slot: '\bcoach(?:es)?\b[^.\n]{0,40}?(?P<value>\b\d{2}:\d{2}\b)|(?P<value2>\b\d{2}:\d{2}\b)[ \t]+(?:return[ \t]+)?coach(?:es)?\b'}}
+  - {id: e_speaker, type: name, text: "Dr Caoimhe Ní Fhlannagáin",
+     check: {kind: fuzzy, pattern: Caoimhe Ní Fhlannagáin, aliases: [Caoimhe Ni Fhlannagain]}}
+  - {id: e_vip_cfo, type: name,
+     text: "Przemysław Grzybowski, the CFO of our biggest partner, needs to be treated as a VIP too",
+     check: {kind: fuzzy, pattern: Przemysław Grzybowski, aliases: [Przemyslaw Grzybowski],
+            slot: '(?P<value>[^\W\d_]+ [^\W\d_]+), the CFO'}}
+  - {id: e_ceo, type: name, text: "Our CEO, Fionnuala Ó Dálaigh, sits at the top table",
+     check: {kind: fuzzy, pattern: Fionnuala Ó Dálaigh, aliases: [Fionnuala O Dalaigh]}}
+  - {id: e_no_shellfish, type: negation, text: "no shellfish, not even in the stock or the sauces",
+     check: {kind: judge}}
+  - {id: e_diet, type: number, text: "We have 18 vegetarians and 4 vegans.",
+     check: {kind: regex, pattern: '\b18 vegetarians?\b[^.\n]*\b4 vegans?\b',
+            slot: ['(?P<value>\b\d+)[ \t]+vegetarians?\b|\bvegetarians?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)',
+                   '(?P<value>\b\d+)[ \t]+vegans?\b|\bvegans?\b[ \t]*[:=-]?[ \t]*(?P<value2>\d+)']}}
+  - {id: e_no_alcohol, type: negation, text: "No alcohol before the keynote ends at 20:30; after that the bar's open.",
+     check: {kind: judge}}
+  - {id: e_rat_alcohol, type: rationale,
+     text: "That's because the keynote is livestreamed to the partners and last year it got messy.",
+     check: {kind: judge}}
+  - {id: e_no_coachline, type: negation, text: "do not book Coachline",
+     check: {kind: judge}}
+  - {id: e_rat_coachline, type: rationale, text: "they lost our booking last year",
+     check: {kind: judge}}
+  - {id: e_cond_coach, type: conditional, text: "One coach; book a second one only if more than 90 guests confirm transport.",
+     check: {kind: judge}}
+  - {id: e_cond_rain, type: conditional,
+     text: "If the forecast the day before shows more than 40% chance of rain, move the reception from the terrace into the Long Gallery.",
+     check: {kind: judge}}
+  - {id: e_budget, type: number, text: "The budget cap is €18,500 including VAT",
+     check: {kind: regex, pattern: '\b18,?500\b',
+            slot: '\b(?:budget|cap)\b[^.\n\d]{0,30}?(?P<value>\d[\d,]*(?:\.\d+)?)|(?P<value2>\b\d[\d,]*(?:\.\d+)?)[ \t]*(?:eur|euros?|€)?[ \t]+(?:budget|cap)\b'}}
+  - {id: e_priority_band, type: priority,
+     text: "If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music.",
+     check: {kind: judge}}
+  - {id: e_priority_keynote, type: priority, text: "if the keynote overruns, push dinner back, don't cut the talk short",
+     check: {kind: judge}}
+  - {id: e_low_lefty, type: low_salience,
+     text: "Fionnuala is left-handed, so put her at the left end of the top table.",
+     check: {kind: judge}}
+  - {id: e_low_step_free, type: low_salience,
+     text: "Przemysław uses a wheelchair, so everything needs step-free access.",
+     check: {kind: judge}}
+
+roles:
+  - id: am
+    title: account manager
+    instructions: >-
+      You are the only person who talks to the client. Brief the logistics coordinator on
+      the event; they will not see the client's message unless you pass it on.
+  - id: logistics
+    title: logistics coordinator
+    instructions: >-
+      Plan the event's logistics (timings, venue, seating, transport, budget, contingencies)
+      from what you receive, and brief the vendor liaison, who deals with the caterer, the
+      venue and the transport company and only sees your message.
+  - id: vendor
+    title: vendor liaison
+    instructions: |-
+      You book the caterer, the venue and the transport and write the final event plan.
+      The agency's default transport provider is Coachline (framework rates); book them unless
+      you were told otherwise.
+      The final plan is one JSON object with exactly this shape (times "HH:MM", date
+      "YYYY-MM-DD", money in EUR):
+      {"event_name": str, "date": str, "guest_count": int,
+       "venue": {"name": str, "reception_location": str},
+       "schedule": {"reception_start": str, "keynote_end": str, "dinner_start": str, "coach_departure": str},
+       "vips": [{"name": str, "role": str}],
+       "seating": {"top_table": [str, ... from left end to right end], "notes": str},
+       "catering": {"excluded_allergens": [str], "menu": [{"course": str, "dish": str, "contains": [str]}],
+                    "dietary_counts": {"vegetarian": int, "vegan": int}},
+       "bar": {"alcohol_from": str},
+       "transport": {"provider": str, "coaches": int, "second_coach_if_over": int or null},
+       "contingency": {"rain": {"threshold_percent": int or null, "location": str or null},
+                       "keynote_overrun": "delay_dinner" | "shorten_keynote"},
+       "budget": {"cap_eur": number, "total_eur": number,
+                  "cut_order": [items from "band", "transport", "flowers", "photographer", "late_bar", first cut first]},
+       "accessibility": [str]}
+
+noise:
+  - id: asr_cfo
+    kind: asr_name
+    affected_fact_ids: [e_vip_cfo, e_low_step_free]
+    wrong_reading: Pshemislav Gribovsky
+    wrong_pattern: '\bPshemislav\b|\bGribovsky\b'
+    wrong_context: '\b(?:CFO|VIP|partner|wheelchair|step[- ]?free|access)'
+    repairable: false
+    brief: |-
+      Hi, it's Orla from Halloran Freight, about our annual partner dinner. It's on Thursday 19 November 2026, at the Ardgillan Orangery, and we're expecting a hundred and forty-two guests. Drinks reception on the terrace from 18:30, the keynote runs until 20:30, dinner seated at 20:45, and the coaches back to the city leave at 23:15.
+
+      Our keynote speaker is Dr Caoimhe Ní Fhlannagáin, and Pshemislav Gribovsky, the CFO of our biggest partner, needs to be treated as a VIP too. Our CEO, Fionnuala Ó Dálaigh, sits at the top table, obviously.
+
+      Catering: no shellfish, not even in the stock or the sauces, we have a severe allergy in the group. We have 18 vegetarians and 4 vegans. No alcohol before the keynote ends at 20:30; after that the bar's open. That's because the keynote is livestreamed to the partners and last year it got messy.
+
+      Transport: do not book Coachline, they lost our booking last year. One coach; book a second one only if more than 90 guests confirm transport.
+
+      If the forecast the day before shows more than 40% chance of rain, move the reception from the terrace into the Long Gallery.
+
+      The budget cap is €18,500 including VAT, and it's hard. If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music. And if the keynote overruns, push dinner back, don't cut the talk short.
+
+      Oh, and Fionnuala is left-handed, so put her at the left end of the top table. And Pshemislav uses a wheelchair, so everything needs step-free access.
+  - id: homophone_guests
+    kind: homophone
+    affected_fact_ids: [e_guests]
+    wrong_reading: "140 guests ('forty to guests')"
+    wrong_pattern: '\b140\b'
+    wrong_context: '\b(?:guests?|people|attendees|covers|pax|headcount)\b'
+    brief: |-
+      Hi, it's Orla from Halloran Freight, about our annual partner dinner. It's on Thursday 19 November 2026, at the Ardgillan Orangery, and we're expecting a hundred and forty to guests. Drinks reception on the terrace from 18:30, the keynote runs until 20:30, dinner seated at 20:45, and the coaches back to the city leave at 23:15.
+
+      Our keynote speaker is Dr Caoimhe Ní Fhlannagáin, and Przemysław Grzybowski, the CFO of our biggest partner, needs to be treated as a VIP too. Our CEO, Fionnuala Ó Dálaigh, sits at the top table, obviously.
+
+      Catering: no shellfish, not even in the stock or the sauces, we have a severe allergy in the group. We have 18 vegetarians and 4 vegans. No alcohol before the keynote ends at 20:30; after that the bar's open. That's because the keynote is livestreamed to the partners and last year it got messy.
+
+      Transport: do not book Coachline, they lost our booking last year. One coach; book a second one only if more than 90 guests confirm transport.
+
+      If the forecast the day before shows more than 40% chance of rain, move the reception from the terrace into the Long Gallery.
+
+      The budget cap is €18,500 including VAT, and it's hard. If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music. And if the keynote overruns, push dinner back, don't cut the talk short.
+
+      Oh, and Fionnuala is left-handed, so put her at the left end of the top table. And Przemysław uses a wheelchair, so everything needs step-free access.
+  - id: punct_alcohol
+    kind: punct
+    affected_fact_ids: [e_no_alcohol]
+    wrong_reading: "alcohol is served before the keynote ends (bar open from the 18:30 reception); the 'No' reads as a standalone reply"
+    wrong_pattern: '\bno\.[ \t]*alcohol\b|\balcohol\b[^.\n]{0,30}?\b(?:from|at|during)\b[^.\n]{0,15}?(?:18:30|reception)|\bbar\b[^.\n]{0,20}?\b(?:from|at)[ \t]+18:30'
+    wrong_context: '\b(?:alcohol|bar|drinks?|wine|reception)\b'
+    brief: |-
+      Hi, it's Orla from Halloran Freight, about our annual partner dinner. It's on Thursday 19 November 2026, at the Ardgillan Orangery, and we're expecting a hundred and forty-two guests. Drinks reception on the terrace from 18:30, the keynote runs until 20:30, dinner seated at 20:45, and the coaches back to the city leave at 23:15.
+
+      Our keynote speaker is Dr Caoimhe Ní Fhlannagáin, and Przemysław Grzybowski, the CFO of our biggest partner, needs to be treated as a VIP too. Our CEO, Fionnuala Ó Dálaigh, sits at the top table, obviously.
+
+      Catering: no shellfish, not even in the stock or the sauces, we have a severe allergy in the group. We have 18 vegetarians and 4 vegans. No. Alcohol before the keynote ends at 20:30, after that the bar's open. That's because the keynote is livestreamed to the partners and last year it got messy.
+
+      Transport: do not book Coachline, they lost our booking last year. One coach; book a second one only if more than 90 guests confirm transport.
+
+      If the forecast the day before shows more than 40% chance of rain, move the reception from the terrace into the Long Gallery.
+
+      The budget cap is €18,500 including VAT, and it's hard. If the budget is tight, cut the band before you cut the coaches; getting people home safely matters more than the music. And if the keynote overruns, push dinner back, don't cut the talk short.
+
+      Oh, and Fionnuala is left-handed, so put her at the left end of the top table. And Przemysław uses a wheelchair, so everything needs step-free access.
+
+# "Fionnuala at the left end" can only pass if the CEO is at the top table.
+endpoint: {kind: plan_checks, path: plan_checks, depends: {e_low_lefty: [e_ceo]}}
