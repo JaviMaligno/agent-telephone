@@ -200,3 +200,12 @@ def test_published_files_carry_no_work_identity():
              if p.is_file() and "__pycache__" not in p.parts] + [root / "README.md", root / "DESIGN.md"]
     hits = [(p.name, w) for p in files for w in forbidden if w in p.read_text(encoding="utf-8", errors="ignore").lower()]
     assert hits == []
+
+
+def test_hub_relay_with_four_roles_targets_the_last_role():
+    from agent_telephone.schema import Condition, Scenario
+    sc = Scenario.load("scenarios/software_pilot")
+    cond = Condition(topology="hub_relay", model="haiku", handoff_format="free", noise="clean")
+    agents = runner_cc.agents_json(sc, cond)
+    assert set(agents) == {"pm", "implementer"}
+    assert runner_cc.routes("hub_relay", [r.id for r in sc.roles]) == {"lead": ["pm", "implementer"]}

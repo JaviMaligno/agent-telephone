@@ -4,18 +4,25 @@
 # is null, BudgetGuard refuses every call to that model; while cache_write/cache_read are
 # null it refuses prompt-cached calls (and charges any reported cache tokens at 2x / 1x input).
 models:
+  # Filled 2026-10-12 from the claude-api skill price table (cached 2026-10-06), first-party list prices.
+  # Haiku 5.5: $0.10/$0.50 for prompts up to 100K tokens ($0.50/$2.50 beyond; our prompts stay far below).
+  # cache_write uses the 1h TTL multiplier (2x input), the more expensive of the two; cache_read = 0.1x input.
+  # Batch API is 50% of these; the guard does not apply that discount (errs on the safe side).
   claude-haiku-5-5:
-    input: null
-    output: null
-    cache_write: null
-    cache_read: null
+    input: 0.10
+    output: 0.50
+    cache_write: 0.20
+    cache_read: 0.01
   claude-sonnet-5-5:
-    input: null
-    output: null
-    cache_write: null
-    cache_read: null
+    input: 2.00
+    output: 10.00
+    cache_write: 4.00
+    cache_read: 0.20
+  # From developers.openai.com/api/docs/pricing (2026-10-12), standard short context (<=272K):
+  # $0.10 in / $0.01 cached / $0.50 out. OpenAI does not bill cache writes; set to the input price
+  # to stay conservative. Served through the company gateway (Azure), billed outside the 500 USD cap.
   gpt-6-luna:
-    input: null
-    output: null
-    cache_write: null
-    cache_read: null
+    input: 0.10
+    output: 0.50
+    cache_write: 0.10
+    cache_read: 0.01

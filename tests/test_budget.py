@@ -16,11 +16,12 @@ def _ok(inp, out):
     return lambda: Completion(text="x", usage=Usage(input_tokens=inp, output_tokens=out))
 
 
-def test_repo_prices_are_null_and_refused(tmp_path):
+def test_repo_prices_claude_filled_others_refused(tmp_path):
     prices = load_prices()
-    assert prices and all(v is None for p in prices.values() for v in p.values())
+    for model in ("claude-haiku-5-5", "claude-sonnet-5-5"):
+        assert all(v is not None and v > 0 for v in prices[model].values())
     guard = BudgetGuard(400, tmp_path / "l.ledger.json", init_ledger=True)
-    for model in prices:
+    for model in [m for m, p in prices.items() if any(v is None for v in p.values())]:
         with pytest.raises(BudgetExceeded):
             guard.call(model, 10, 10, _ok(1, 1))
     with pytest.raises(BudgetExceeded):

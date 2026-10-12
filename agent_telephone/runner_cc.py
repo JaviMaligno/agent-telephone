@@ -97,7 +97,7 @@ def _delegate(target: str, fmt: str) -> str:
 def prompts(scenario: Scenario, condition: Condition) -> dict[str, str]:
     """System prompt per role (the lead's goes to --system-prompt)."""
     roles = [r.id for r in scenario.roles]
-    lead, terminal = roles[0], (roles[-1] if condition.topology == "hier_chain" else roles[2])
+    lead, terminal = roles[0], roles[-1]
     endpoint, _ = ENDPOINT_INSTRUCTIONS[scenario.domain]
     out = {}
     if condition.topology == "hier_chain":
@@ -105,7 +105,7 @@ def prompts(scenario: Scenario, condition: Condition) -> dict[str, str]:
             out[a] = (f"{_role_text(scenario, a)}\n\n{_delegate(b, condition.handoff_format)} "
                       "When it answers, reply with its answer verbatim.")
     else:
-        r1, r2 = roles[1:3]
+        r1, r2 = roles[1], roles[-1]
         out[lead] = (f"{_role_text(scenario, lead)}\n\nStep 1: {_delegate(r1, condition.handoff_format)}\n"
                      f"Step 2: when {r1} answers, write a new hand-off for {r2} based on what {r1} sent you and "
                      f"delegate exactly once with subagent_type \"{r2}\". {_handoff(condition.handoff_format)} "
@@ -122,7 +122,11 @@ def agents_json(scenario: Scenario, condition: Condition, models: dict[str, str]
     return {r: {"description": scenario.role(r).title, "prompt": sys[r],
                 "tools": [f"Agent({allowed[r][0]})"] if r in allowed else [],
                 "model": (models or {}).get(r, condition.model)}
-            for r in roles[1:]}
+            for r in _used_roles(condition.topology, roles)[1:]}
+
+
+def _used_roles(topology: str, roles: list[str]) -> list[str]:
+    return roles if topology == "hier_chain" else [roles[0], roles[1], roles[-1]]
 
 
 def build_command(scenario: Scenario, condition: Condition, models: dict[str, str] | None = None,
@@ -378,7 +382,7 @@ def record(events: list[dict], scenario: Scenario, condition: Condition, log_pat
     """Parse a finished run's stream, append its rows to the log and write the artifact."""
     roles = [r.id for r in scenario.roles]
     allowed = routes(condition.topology, roles)
-    terminal = roles[-1] if condition.topology == "hier_chain" else roles[2]
+    terminal = roles[-1]
     hops = parse_stream(events, scenario.source_brief(condition.noise), lead=roles[0])
     problems = check_run(events, hops, allowed)
     ret = next((h for h in reversed(hops) if h.kind == "return" and h.sender == terminal), None)
