@@ -248,3 +248,10 @@ Scoring stack:
   annotator and disagreements with the judge are adjudicated by a third model; agreement is reported
   as model-anchored, not human-anchored.
 
+- 2026-10-13 — **API harness: senders are told who receives their message** (before any API-arm
+  data). In the Luna smoke test the PM wrote the architect a request to write requirements instead
+  of the requirements, the architect forwarded it, and the implementer refused. Claude Code agents
+  always know the receiver (the Agent call names the subagent); the API harness did not. Every
+  hand-off instruction now names the receiver's role (or "back to the … who delegated" for upward
+  hand-backs). Full grid: all four noise levels, 3 replicates (`-s1`, `-s2` suffixes), fresh run
+  directories separate from the pilot used to fix the instrument.

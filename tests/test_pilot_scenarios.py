@@ -310,3 +310,12 @@ def test_cc_pilot_scenarios_option():
     assert cc.SCENARIOS == {"scenarios/software_pilot": ["clean", "asr_signer"], "scenarios/event_pilot": ["clean", "asr_cfo"]}
     assert cc.scenario_noises(["software_2", "scenarios/event_3"]) == {
         "scenarios/software_2": ["clean", "asr_approver"], "scenarios/event_3": ["clean", "asr_av"]}
+
+
+def test_cc_pilot_full_grid_options():
+    """--all-noise adds homophone/punct; replicate 0 keeps the pilot id, later ones get -s<k>."""
+    cc = _module(SCENARIOS.parent / "scripts" / "cc_pilot.py", "cc_pilot_script")
+    assert cc.scenario_noises(["software_2"], all_noise=True) == {
+        "scenarios/software_2": ["clean", "asr_approver", "homophone_period", "punct_trial"]}
+    assert cc.run_name("scenarios/software_2", "clean", "hub_relay", "free", "haiku", 0) == "software_2-hub_relay-free-clean-haiku"
+    assert cc.run_name("scenarios/software_2", "clean", "hub_relay", "free", "haiku", 2).endswith("-haiku-s2")

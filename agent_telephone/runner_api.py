@@ -40,6 +40,14 @@ def _system(scenario: Scenario, role_id: str) -> str:
     return f"You are the {role.title} in a team working for a client.\n\n{role.instructions}"
 
 
+def _addressee(scenario: Scenario, e: topologies.Edge) -> str:
+    """Who the message is for, as Claude Code's Agent call tells the sender (parity with runner_cc)."""
+    title = scenario.role(e.receiver).title
+    if e.direction == "up":
+        return f"Your reply goes back to the {title} who delegated this step to you. "
+    return f"Your message goes to the {title} ({e.receiver}), who only sees your message. "
+
+
 def _prompt(inbox: list[tuple[str, str]], instruction: str) -> str:
     blocks = "\n\n".join(f'<received from="{s}">\n{t}\n</received>' for s, t in inbox)
     return f"{blocks}\n\n<instruction>\n{instruction}\n</instruction>"
@@ -71,7 +79,7 @@ def run(scenario: Scenario, condition: Condition, backend: Backend, log_path: st
         if e.sender == topologies.USER:
             emit(e, original, Usage(), "human")
             continue
-        c = ask(e.sender, formats.instruction(condition.handoff_format))
+        c = ask(e.sender, _addressee(scenario, e) + formats.instruction(condition.handoff_format))
         emit(e, formats.compose(condition.handoff_format, c.text, original), c.usage, condition.model)
 
     final, (instruction, ext) = edges[-1].receiver, ENDPOINT_INSTRUCTIONS[scenario.domain]

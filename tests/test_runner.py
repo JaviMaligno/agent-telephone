@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -74,3 +75,23 @@ def test_paid_backend_refused_with_null_prices(tmp_path, scenario):
     assert "sk-secret" not in repr(gw)
     with pytest.raises(BudgetExceeded):  # refused before any network I/O
         runner_api.run(scenario, _cond(model="gpt-6-luna"), gw, tmp_path / "log.jsonl")
+
+
+def test_api_sender_is_told_the_receiver(tmp_path):
+    """Parity with Claude Code (the Agent call names the subagent): every hand-off prompt says who reads it."""
+    from agent_telephone import runner_api
+    from agent_telephone.backends.base import Completion
+    from agent_telephone.schema import Condition, Scenario
+
+    sc = Scenario.load(Path(__file__).resolve().parent.parent / "scenarios" / "software_pilot")
+    seen = []
+
+    class Rec:
+        def complete(self, system, messages, model, max_tokens):
+            seen.append(messages[0]["content"])
+            return Completion(text="x")
+
+    runner_api.run(sc, Condition(topology="hub_relay", model="m", handoff_format="free", noise="clean"), Rec(),
+                   tmp_path / "log.jsonl")
+    assert "goes to the product manager (pm)" in seen[0]
+    assert "goes back to the" in seen[1] and "goes to the Python developer (implementer)" in seen[2]

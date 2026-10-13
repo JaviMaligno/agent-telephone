@@ -26,7 +26,7 @@ DEFAULT_SCENARIOS = ["software_pilot", "event_pilot"]
 TOPOLOGIES = ["hier_chain", "hub_relay"]
 FORMATS = ["free", "structured", "forward"]
 MODELS = ["haiku", "sonnet"]
-FIELDS = ["run_id", "scenario", "topology", "format", "noise", "model", "valid", "problems", "messages", "duration_s",
+FIELDS = ["run_id", "seed", "scenario", "topology", "format", "noise", "model", "valid", "problems", "messages", "duration_s",
           "num_turns", "cost_usd_list", "cost_basis", "models_used", "input_tokens", "output_tokens", "cache_read",
           "cache_write", "handoff_out_tokens", "handoff_chars"]
 
@@ -40,27 +40,33 @@ def final_result(stream: Path) -> dict:
     return res
 
 
-def scenario_noises(names: list[str]) -> dict[str, list[str]]:
+def scenario_noises(names: list[str], all_noise: bool = False) -> dict[str, list[str]]:
     """{scenario dir: noise levels} for scenario names (dirs under scenarios/) or paths: clean + the
-    asr_name variant(s)."""
+    asr_name variant(s), or every noise variant with all_noise (the full grid)."""
     out = {}
     for name in names:
         sdir = name if "/" in name else f"scenarios/{name}"
         sc = Scenario.load(ROOT / sdir)  # relative paths are relative to the repo
         if sc.id != Path(sdir).name:  # run ids and the resume check use the dir name
             raise SystemExit(f"{sdir}: scenario id {sc.id!r} differs from its directory name")
-        out[sdir] = ["clean", *(n.id for n in sc.noise if n.kind == "asr_name")]
+        out[sdir] = ["clean", *(n.id for n in sc.noise if all_noise or n.kind == "asr_name")]
     return out
 
 
 SCENARIOS = scenario_noises(DEFAULT_SCENARIOS)
 
 
-def one(scenario_dir: str, noise: str, topology: str, fmt: str, model: str, out: Path) -> dict:
+def run_name(scenario_dir: str, noise: str, topology: str, fmt: str, model: str, seed: int) -> str:
+    """Replicate 0 keeps the pilot's id; later replicates get an -s<k> suffix."""
+    return f"{Path(scenario_dir).name}-{topology}-{fmt}-{noise}-{model}" + (f"-s{seed}" if seed else "")
+
+
+def one(scenario_dir: str, noise: str, topology: str, fmt: str, model: str, seed: int, out: Path) -> dict:
     sc = Scenario.load(scenario_dir)
     cond = Condition(topology=topology, model=model, handoff_format=fmt, noise=noise)
-    run_id = f"{sc.id}-{topology}-{fmt}-{noise}-{model}"
-    row = {"run_id": run_id, "scenario": sc.id, "topology": topology, "format": fmt, "noise": noise, "model": model}
+    run_id = run_name(scenario_dir, noise, topology, fmt, model, seed)
+    row = {"run_id": run_id, "scenario": sc.id, "topology": topology, "format": fmt, "noise": noise, "model": model,
+           "seed": seed}
     try:
         r = runner_cc.run(sc, cond, out / "messages.jsonl", run_id=run_id, timeout=1800)
     except Exception as e:  # keep the grid going; the row records the failure
@@ -88,11 +94,16 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="run only the first N conditions (smoke test)")
     ap.add_argument("--scenarios", default=",".join(DEFAULT_SCENARIOS),
                     help="comma-separated scenario names (dirs under scenarios/) or paths; default: the two pilots")
+    ap.add_argument("--all-noise", action="store_true", help="every noise variant (homophone, punct too), not just ASR")
+    ap.add_argument("--seeds", type=int, default=1, help="replicates per condition")
+    ap.add_argument("--models", default=",".join(MODELS))
     args = ap.parse_args()
-    scenarios = scenario_noises([s.strip() for s in args.scenarios.split(",") if s.strip()])
+    scenarios = scenario_noises([s.strip() for s in args.scenarios.split(",") if s.strip()], args.all_noise)
+    models = [m.strip() for m in args.models.split(",") if m.strip()]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    grid = [(s, n, t, f, m) for s, ns in scenarios.items() for n, t, f, m in itertools.product(ns, TOPOLOGIES, FORMATS, MODELS)]
+    grid = [(s, n, t, f, m, k) for k in range(args.seeds) for s, ns in scenarios.items()
+            for n, t, f, m in itertools.product(ns, TOPOLOGIES, FORMATS, models)]
     if args.limit:
         grid = grid[: args.limit]
     done = set()
@@ -101,8 +112,7 @@ def main() -> None:
         done = {r["run_id"] for r in csv.DictReader(csv_path.open()) if r.get("valid") == "True"}
     rows = []
     with ThreadPoolExecutor(args.workers) as ex:
-        futs = {ex.submit(one, *g, out): g for g in grid
-                if f"{Path(g[0]).name}-{g[2]}-{g[3]}-{g[1]}-{g[4]}" not in done}
+        futs = {ex.submit(one, *g, out): g for g in grid if run_name(*g) not in done}
         for fut in as_completed(futs):
             row = fut.result()
             rows.append(row)
