@@ -25,6 +25,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import os
 import statistics
 import sys
@@ -107,17 +109,47 @@ def endpoint_rates(endpoints: list[dict], by: tuple[str, ...]) -> list[dict]:
 
 class OncePerPrompt:
     """Backend wrapper: an identical request within one pass is sent once (full view == note view
-    outside `forward` runs), so a second pass gets a fresh instance and genuinely resamples."""
+    outside `forward` runs), so a second pass gets a fresh instance and genuinely resamples.
+    With `store`, answers are appended to a JSONL file and reloaded, so a long run resumes."""
 
-    def __init__(self, inner: Backend):
-        self.inner, self.cache, self.sent = inner, {}, 0
+    def __init__(self, inner: Backend, store: Path | None = None):
+        self.inner, self.cache, self.sent, self.store = inner, {}, 0, store
+        self.lock = threading.Lock()
+        if store and store.exists():
+            for line in store.open(encoding="utf-8"):
+                row = json.loads(line)
+                self.cache[row["key"]] = Completion.model_validate(row["completion"])
+
+    @staticmethod
+    def key(system: str, messages: list[dict], model: str, max_tokens: int) -> str:
+        return json.dumps([system, messages, model, max_tokens], ensure_ascii=False)
 
     def complete(self, system: str, messages: list[dict], model: str, max_tokens: int) -> Completion:
-        key = json.dumps([system, messages, model, max_tokens], ensure_ascii=False)
+        key = self.key(system, messages, model, max_tokens)
         if key not in self.cache:
-            self.cache[key] = self.inner.complete(system, messages, model, max_tokens)
-            self.sent += 1
+            c = self.inner.complete(system, messages, model, max_tokens)
+            with self.lock:
+                self.cache[key] = c
+                self.sent += 1
+                if self.store:
+                    with self.store.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({"key": key, "completion": c.model_dump()}, ensure_ascii=False) + "\n")
         return self.cache[key]
+
+    def prefetch(self, prompts: list[str], model: str, max_tokens: int, workers: int) -> None:
+        """Send the first-attempt requests concurrently; scoring then reads them from the cache (only
+        retries after invalid output are sent serially)."""
+        todo = [p for p in dict.fromkeys(prompts)
+                if self.key(SYSTEM, [{"role": "user", "content": p}], model, max_tokens) not in self.cache]
+        def one(p):
+            try:
+                self.complete(SYSTEM, [{"role": "user", "content": p}], model, max_tokens)
+            except Exception as e:  # left uncached: the serial scoring pass retries it
+                print(f"prefetch failed: {type(e).__name__}: {str(e)[:200]}", flush=True)
+        with ThreadPoolExecutor(workers) as ex:
+            for i, _ in enumerate(ex.map(one, todo), 1):
+                if i % 100 == 0 or i == len(todo):
+                    print(f"prefetch {i}/{len(todo)}", flush=True)
 
 
 class NoCalls:
@@ -187,12 +219,26 @@ def judge_plan(scenarios: dict[str, Scenario], messages: list[Message], judge_mo
     return plan
 
 
+def judge_prompts(scenarios: dict[str, Scenario], messages: list[Message], view: str) -> list[str]:
+    out = []
+    for m in messages:
+        facts = [f for f in scenarios[m.scenario].facts if needs_judge(f)]
+        if facts:
+            out.append(build_prompt(scenarios[m.scenario].brief, facts, view_text(m, view)))
+    return out
+
+
 def run_judge(scenarios: dict[str, Scenario], messages: list[Message], backend: Backend, judge_model: str,
-              n_passes: int, max_tokens: int) -> dict[tuple[str, int], tuple[list[ScoreRow], list[InventedClaim]]]:
-    out, cached = {}, OncePerPrompt(backend)
+              n_passes: int, max_tokens: int, workers: int = 1, cache_dir: Path | None = None,
+              ) -> dict[tuple[str, int], tuple[list[ScoreRow], list[InventedClaim]]]:
+    def store(p):
+        return cache_dir / f"judge_cache_pass{p}.jsonl" if cache_dir else None
+    out, cached = {}, OncePerPrompt(backend, store(0))
     for view, p in judge_passes(n_passes):
         if p > 0:
-            cached = OncePerPrompt(backend)
+            cached = OncePerPrompt(backend, store(p))
+        if workers > 1:
+            cached.prefetch(judge_prompts(scenarios, messages, view), judge_model, max_tokens, workers)
         judge = Judge(cached, judge_model, {m.model for m in messages}, max_tokens=max_tokens)
         out[view, p] = score_messages(scenarios, messages, judge, view=view, judge_pass=p)
     return out
@@ -311,8 +357,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, help="default: <dir>/scored")
     ap.add_argument("--timeout", type=float, default=120, help="hidden-test timeout per artifact (s)")
     ap.add_argument("--skip-endpoints", action="store_true")
-    ap.add_argument("--judge", choices=["none", "gateway", "codex"], default="none",
-                    help="codex = GPT on the ChatGPT subscription via codex exec (no spend)")
+    ap.add_argument("--judge", choices=["none", "gateway", "codex", "claude"], default="none",
+                    help="codex = GPT on the ChatGPT subscription via codex exec; claude = Claude on the Claude "
+                         "subscription via claude -p (for non-Claude agent runs); neither spends")
+    ap.add_argument("--judge-workers", type=int, default=1, help="concurrent first-attempt judge calls")
     ap.add_argument("--judge-model", default="gpt-5.6-sol-tst")
     ap.add_argument("--judge-passes", type=int, default=2, help="note-view passes (2 = second pass for kappa)")
     ap.add_argument("--judge-max-tokens", type=int, default=2048)
@@ -339,7 +387,7 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(plan, indent=1))
         if args.dry_run:
             return
-        if args.judge == "codex":
+        if args.judge in ("codex", "claude"):
             pass  # subscription: no spend to cap
         elif plan["cost_usd"] is None:
             raise SystemExit(f"refusing to run the judge: {plan['cost_note']}")
@@ -352,10 +400,14 @@ def main(argv: list[str] | None = None) -> None:
         if args.judge == "codex":
             from agent_telephone.backends.codex_cli import CodexBackend
             backend = CodexBackend(reasoning_effort=args.reasoning_effort or "medium")
+        elif args.judge == "claude":
+            from agent_telephone.backends.claude_cli import ClaudeCliBackend
+            backend = ClaudeCliBackend(effort=args.reasoning_effort)
         else:
             backend = gateway_backend(args)
+        out.mkdir(parents=True, exist_ok=True)
         judged = run_judge(scenarios, messages, backend, args.judge_model, args.judge_passes,
-                           args.judge_max_tokens)
+                           args.judge_max_tokens, args.judge_workers, out)
         for (view, p), (rows, inv) in judged.items():
             name = view if p == 0 else f"{view}_pass{p}"
             scores[name], invented[name] = rows, inv

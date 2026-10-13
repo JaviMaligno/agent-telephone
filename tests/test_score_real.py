@@ -80,3 +80,26 @@ def test_main_deterministic_and_dry_run(real_dir, capsys):
     with pytest.raises(SystemExit, match="refusing to run the judge"):
         score_real.main(["--dir", str(run_dir), "--scenarios", str(scenarios), "--judge", "gateway",
                          "--judge-model", "gpt-5.6-sol-tst"])
+
+
+def test_judge_prefetch_hits_cache_and_resumes(tmp_path):
+    """Prefetched first attempts are exactly the requests the judge sends, and persist for resume."""
+    import importlib.util
+    from pathlib import Path as P
+    from agent_telephone.backends.base import Completion
+    spec = importlib.util.spec_from_file_location("sr", P(__file__).resolve().parent.parent / "scripts" / "score_real.py")
+    sr = importlib.util.module_from_spec(spec); spec.loader.exec_module(sr)
+    calls = []
+
+    class B:
+        def complete(self, system, messages, model, max_tokens):
+            calls.append(messages[0]["content"]); return Completion(text=f"ans:{messages[0]['content']}")
+
+    store = tmp_path / "c.jsonl"
+    c = sr.OncePerPrompt(B(), store)
+    c.prefetch(["p1", "p2", "p1"], "m", 10, workers=3)
+    assert sorted(calls) == ["p1", "p2"]
+    assert c.complete(sr.SYSTEM, [{"role": "user", "content": "p1"}], "m", 10).text == "ans:p1" and len(calls) == 2
+    again = sr.OncePerPrompt(B(), store)
+    again.prefetch(["p1", "p2"], "m", 10, workers=2)
+    assert len(calls) == 2
