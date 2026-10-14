@@ -15,10 +15,18 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from ..schema import Usage
 from .base import Completion
+
+RATE_LIMIT_WAITS = (60, 300, 900, 1800, 3600, 3600, 3600, 3600)  # ~4 h in total, then give up
+
+
+class RateLimited(RuntimeError):
+    pass
+
 
 DEFAULT_HOME = Path.home() / ".local/state/agent-telephone/codex-home"
 ENV_ALLOW = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL")
@@ -81,13 +89,26 @@ class CodexBackend:
     and is ignored (subscription, no spend). Pass `schema` to force a JSON answer."""
 
     def __init__(self, reasoning_effort: str | None = "medium", home: Path = DEFAULT_HOME, timeout: float = 600,
-                 codex_bin: str | None = None, runner=subprocess.run):
+                 codex_bin: str | None = None, runner=subprocess.run, rate_limit_waits: tuple[float, ...] = RATE_LIMIT_WAITS,
+                 sleep=time.sleep):
         self.effort, self.timeout, self.runner = reasoning_effort, timeout, runner
+        self.waits, self.sleep = rate_limit_waits, sleep
         self.home = home if runner is not subprocess.run else ensure_home(home)
         self.bin = codex_bin or (find_codex() if runner is subprocess.run else "codex")
 
     def complete(self, system: str, messages: list[dict], model: str, max_tokens: int,
                  schema: dict | None = None) -> Completion:
+        """A usage-limit 429 (subscription quota) is waited out with backoff, not raised."""
+        for wait in (*self.waits, None):
+            try:
+                return self._complete_once(system, messages, model, max_tokens, schema)
+            except RateLimited:
+                if wait is None:
+                    raise
+                self.sleep(wait)
+
+    def _complete_once(self, system: str, messages: list[dict], model: str, max_tokens: int,
+                       schema: dict | None) -> Completion:
         with tempfile.TemporaryDirectory(prefix="agent-telephone-codex-") as wd:
             cmd = [self.bin, "exec", "--json", "--ignore-rules", "--ephemeral", "--skip-git-repo-check",
                    "-s", "read-only", "-m", model, "-o", "last.txt"]
@@ -100,6 +121,8 @@ class CodexBackend:
             env = {k: v for k, v in os.environ.items() if k in ENV_ALLOW} | {"CODEX_HOME": str(self.home)}
             proc = self.runner(cmd, cwd=wd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                timeout=self.timeout)
+            if proc.returncode and "status: 429" in (proc.stdout or "") + (proc.stderr or ""):
+                raise RateLimited("codex usage limit (429)")
             if proc.returncode:
                 raise RuntimeError(f"codex exited {proc.returncode}: {(proc.stderr or '')[-400:]}")
             text, usage = parse_events(proc.stdout.splitlines())

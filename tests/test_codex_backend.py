@@ -47,3 +47,11 @@ def test_home_refuses_leaked_instructions(tmp_path):
     (tmp_path / "AGENTS.md").write_text("user instructions")
     with pytest.raises(RuntimeError):
         ensure_home(tmp_path)
+
+
+def test_rate_limit_is_waited_out(tmp_path):
+    fail = json.dumps({"type": "turn.failed", "error": {"message": "exceeded retry limit, last status: 429 Too Many Requests"}})
+    outs = iter([subprocess.CompletedProcess([], 1, fail, ""), subprocess.CompletedProcess([], 0, "\n".join(EVENTS), "")])
+    slept = []
+    b = CodexBackend(home=tmp_path, runner=lambda cmd, **kw: next(outs), rate_limit_waits=(5,), sleep=slept.append)
+    assert b.complete("s", [{"role": "user", "content": "x"}], "m", 10).text == "ok" and slept == [5]
