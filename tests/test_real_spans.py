@@ -196,3 +196,27 @@ def test_forward_note_repeating_the_noisy_source_is_not_a_contradiction():
     rows, _ = score_messages({SC_EV.id: SC_EV}, [m], view="note")
     (fc,) = analysis.forward_contradiction(rows)
     assert fc["contradicted"] == 1 and fc["noise_reading"] == 1  # 124 contradicts; the ASR name echoes the source
+
+
+def test_negated_vendor_mention_is_not_a_booking():
+    """Grid finding 2026-10-14: plans wrote 'TBC (not Coachline)' / 'Non-Coachline provider' and the
+    substring check failed every one of them (0 % in all models)."""
+    import importlib.util
+    from pathlib import Path as P
+    root = P(__file__).resolve().parent.parent / "scenarios"
+    for scen, name, booked, excluded in [("event_pilot", "coachline", "Coachline (framework rates)", "TBC (not Coachline)"),
+                                         ("event_2", "lumiere", "Lumière Fotografia", "Non-Lumière photographer TBC")]:
+        sp = importlib.util.spec_from_file_location(f"chk_{scen}", root / scen / "plan_checks" / "checks.py")
+        c = importlib.util.module_from_spec(sp); sp.loader.exec_module(c)
+        assert c.books(booked, name) and not c.books(excluded, name)
+
+
+def test_negation_after_the_vendor_name():
+    import importlib.util
+    from pathlib import Path as P
+    sp = importlib.util.spec_from_file_location("chk_e2", P(__file__).resolve().parent.parent / "scenarios" / "event_2" / "plan_checks" / "checks.py")
+    c = importlib.util.module_from_spec(sp); sp.loader.exec_module(c)
+    for t in ["To be booked; Lumière Fotografia excluded at client request", "Not booked; couple declined Lumière Fotografia.",
+              "TBD: alternative to Lumière Fotografia required"]:
+        assert not c.books(t, "lumiere"), t
+    assert c.books("Lumière Fotografia", "lumiere") and c.books("Lumière Fotografia (deposit paid)", "lumiere")

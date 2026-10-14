@@ -260,3 +260,11 @@ Scoring stack:
   (4,084 calls) does not fit the ChatGPT usage limit (429 after ~3,700 calls). Runs are sampled
   whole by a stable hash of the run id (`--retest-fraction 0.2`). The Luna grid's retest (Claude
   judge) was already running in full and stays full.
+- 2026-10-14 — **Post-data fix: negated vendor mentions** (`e_no_coachline`, `w_no_lumiere`). The
+  substring check failed any plan naming the excluded vendor, including "TBC (not Coachline)" and
+  "Non-Coachline provider", so both facts scored 0 % in every model. A mention preceded by a negation
+  is now an honoured exclusion: the field holds one provider, so the vendor counts as booked only if
+  it is named and the field carries no negation/exclusion marker (`books()`; a first version that
+  only looked before the name still missed "Lumière Fotografia excluded", "must NOT be booked" and
+  Spanish phrasings). Across both grids 3 plans genuinely book the excluded vendor; regression tests. Endpoint numbers computed before
+  2026-10-14 for these two facts are void; the judge labels are unaffected.

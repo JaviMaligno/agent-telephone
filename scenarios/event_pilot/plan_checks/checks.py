@@ -50,6 +50,19 @@ def norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s.translate(NO_DECOMPOSITION))
     return "".join(c for c in s if not unicodedata.combining(c)).casefold()
 
+NEGATION = re.compile(r"\b(?:not|no|non|never|nor|without|avoid\w*|exclu\w*|prohibit\w*|declin\w*|reject\w*|"
+                      r"ruled out|bann\w*|blacklist\w*|instead|other than|alternative\w*|replacement|anyone but|"
+                      r"except|descartad\w*|distint\w*|excluid\w*|prohibid\w*|sin)\b")
+
+
+def books(text: str, name: str) -> bool:
+    """True if the provider field names `name` as the choice. The field holds one provider, so a
+    negation or exclusion marker anywhere in it ("TBC (not Coachline)", "Coachline excluded",
+    "must NOT be booked", "descartada") is the client's exclusion being honoured, not a booking."""
+    t = norm(text or "")
+    return name in t and not NEGATION.search(t)
+
+
 
 def _has(names: list[str], name: str) -> bool:
     return any(norm(name) in norm(n) for n in names)
@@ -84,7 +97,7 @@ CHECKS: dict[str, Callable[[dict], bool]] = {
     "e_no_shellfish": _no_shellfish,
     "e_diet": lambda p: p["catering"]["dietary_counts"] == {"vegetarian": 18, "vegan": 4},
     "e_no_alcohol": lambda p: p["bar"]["alcohol_from"] >= "20:30",
-    "e_no_coachline": lambda p: "coachline" not in norm(p["transport"]["provider"]).replace(" ", ""),
+    "e_no_coachline": lambda p: not books(p["transport"]["provider"], "coachline"),
     "e_cond_coach": lambda p: p["transport"]["coaches"] == 1 and p["transport"]["second_coach_if_over"] == 90,
     "e_cond_rain": lambda p: p["contingency"]["rain"]["threshold_percent"] == 40
     and "long gallery" in norm(p["contingency"]["rain"]["location"] or ""),

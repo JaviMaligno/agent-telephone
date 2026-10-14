@@ -52,6 +52,19 @@ def norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s.translate(NO_DECOMPOSITION))
     return "".join(c for c in s if not unicodedata.combining(c)).casefold()
 
+NEGATION = re.compile(r"\b(?:not|no|non|never|nor|without|avoid\w*|exclu\w*|prohibit\w*|declin\w*|reject\w*|"
+                      r"ruled out|bann\w*|blacklist\w*|instead|other than|alternative\w*|replacement|anyone but|"
+                      r"except|descartad\w*|distint\w*|excluid\w*|prohibid\w*|sin)\b")
+
+
+def books(text: str, name: str) -> bool:
+    """True if the provider field names `name` as the choice. The field holds one provider, so a
+    negation or exclusion marker anywhere in it ("TBC (not Coachline)", "Coachline excluded",
+    "must NOT be booked", "descartada") is the client's exclusion being honoured, not a booking."""
+    t = norm(text or "")
+    return name in t and not NEGATION.search(t)
+
+
 
 def _has(names: list[str], name: str) -> bool:
     return any(norm(name) in norm(n) for n in names)
@@ -96,7 +109,7 @@ CHECKS: dict[str, Callable[[dict], bool]] = {
     "w_grandmother": lambda p: _has(_people(p), "Aino-Kaarina Väänänen"),
     "w_no_nuts": _no_nuts,
     "w_diet": lambda p: p["catering"]["dietary_counts"] == {"vegetarian": 11, "children": 4},
-    "w_no_lumiere": lambda p: "lumiere" not in norm(p["photographer"]).replace(" ", ""),
+    "w_no_lumiere": lambda p: not books(p["photographer"], "lumiere"),
     "w_no_macarena": lambda p: any("macarena" in norm(s) for s in p["music"]["banned_songs"]),
     "w_cond_cards": _cards,
     "w_cond_heat": lambda p: p["contingency"]["heat"]["threshold_celsius"] == 32
