@@ -268,3 +268,8 @@ Scoring stack:
   only looked before the name still missed "Lumière Fotografia excluded", "must NOT be booked" and
   Spanish phrasings). Across both grids 3 plans genuinely book the excluded vendor; regression tests. Endpoint numbers computed before
   2026-10-14 for these two facts are void; the judge labels are unaffected.
+- 2026-10-14 — **Isolation gap found after the runs: the account identity.** Claude Code adds the
+  logged-in account's name and email to the main session's context even with `--system-prompt`
+  replaced and `--setting-sources ""`. In 17 of 853 Claude grid runs the lead used them (treating
+  the email as the client's, or naming the account holder as the go-between). No scored fact
+  depends on it; the published copy of the data replaces the name and email.
