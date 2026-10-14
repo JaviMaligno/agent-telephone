@@ -255,3 +255,8 @@ Scoring stack:
   hand-off instruction now names the receiver's role (or "back to the … who delegated" for upward
   hand-backs). Full grid: all four noise levels, 3 replicates (`-s1`, `-s2` suffixes), fresh run
   directories separate from the pilot used to fix the instrument.
+- 2026-10-14 — **Judge retest on a 20 % sample for the Claude grid** (before any retest data of that
+  grid). Test-retest kappa (0.908 on the pilot) only needs a sample; the full second note pass
+  (4,084 calls) does not fit the ChatGPT usage limit (429 after ~3,700 calls). Runs are sampled
+  whole by a stable hash of the run id (`--retest-fraction 0.2`). The Luna grid's retest (Claude
+  judge) was already running in full and stays full.

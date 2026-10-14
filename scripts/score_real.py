@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -157,13 +158,21 @@ class NoCalls:
         raise RuntimeError("dry run: no judge calls")
 
 
+def retest_sample(messages: list[Message], fraction: float) -> list[Message]:
+    """Messages of a stable pseudo-random subset of runs (sha256 of the run id), for retest passes."""
+    if fraction >= 1:
+        return messages
+    keep = lambda rid: int(hashlib.sha256(rid.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF < fraction
+    return [m for m in messages if keep(m.run_id)]
+
+
 def judge_passes(n: int) -> list[tuple[str, int]]:
     """(view, pass) in run order; pass 0 of both views shares one prompt cache."""
     return [("note", 0), ("full", 0)] + [("note", p) for p in range(1, n)]
 
 
 def judge_plan(scenarios: dict[str, Scenario], messages: list[Message], judge_model: str, n_passes: int,
-               max_tokens: int, prices_path: Path = DEFAULT_PRICES) -> dict:
+               max_tokens: int, prices_path: Path = DEFAULT_PRICES, retest_fraction: float = 1.0) -> dict:
     """Exact call count and conservative tokens / cost of a judge run, without sending anything.
     Input tokens use budget.estimate_input_tokens (2 chars/token) on the exact prompts; visible
     output is estimated per fact; the worst case is max_tokens per call (reasoning included) and
@@ -178,7 +187,7 @@ def judge_plan(scenarios: dict[str, Scenario], messages: list[Message], judge_mo
         if p > 0:
             seen = set()
         n = 0
-        for m in messages:
+        for m in (messages if p == 0 else retest_sample(messages, retest_fraction)):
             facts = [f for f in scenarios[m.scenario].facts if needs_judge(f)]
             if not facts:
                 continue
@@ -230,17 +239,18 @@ def judge_prompts(scenarios: dict[str, Scenario], messages: list[Message], view:
 
 def run_judge(scenarios: dict[str, Scenario], messages: list[Message], backend: Backend, judge_model: str,
               n_passes: int, max_tokens: int, workers: int = 1, cache_dir: Path | None = None,
-              ) -> dict[tuple[str, int], tuple[list[ScoreRow], list[InventedClaim]]]:
+              retest_fraction: float = 1.0) -> dict[tuple[str, int], tuple[list[ScoreRow], list[InventedClaim]]]:
     def store(p):
         return cache_dir / f"judge_cache_pass{p}.jsonl" if cache_dir else None
     out, cached = {}, OncePerPrompt(backend, store(0))
     for view, p in judge_passes(n_passes):
         if p > 0:
             cached = OncePerPrompt(backend, store(p))
+        msgs = messages if p == 0 else retest_sample(messages, retest_fraction)
         if workers > 1:
-            cached.prefetch(judge_prompts(scenarios, messages, view), judge_model, max_tokens, workers)
+            cached.prefetch(judge_prompts(scenarios, msgs, view), judge_model, max_tokens, workers)
         judge = Judge(cached, judge_model, {m.model for m in messages}, max_tokens=max_tokens)
-        out[view, p] = score_messages(scenarios, messages, judge, view=view, judge_pass=p)
+        out[view, p] = score_messages(scenarios, msgs, judge, view=view, judge_pass=p)
     return out
 
 
@@ -360,6 +370,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--judge", choices=["none", "gateway", "codex", "claude"], default="none",
                     help="codex = GPT on the ChatGPT subscription via codex exec; claude = Claude on the Claude "
                          "subscription via claude -p (for non-Claude agent runs); neither spends")
+    ap.add_argument("--retest-fraction", type=float, default=1.0,
+                    help="share of runs (stable hash of run id) judged again in retest passes (kappa)")
     ap.add_argument("--judge-workers", type=int, default=1, help="concurrent first-attempt judge calls")
     ap.add_argument("--judge-model", default="gpt-5.6-sol-tst")
     ap.add_argument("--judge-passes", type=int, default=2, help="note-view passes (2 = second pass for kappa)")
@@ -381,7 +393,8 @@ def main(argv: list[str] | None = None) -> None:
 
     plan = None
     if args.judge != "none":
-        plan = judge_plan(scenarios, messages, args.judge_model, args.judge_passes, args.judge_max_tokens, args.prices)
+        plan = judge_plan(scenarios, messages, args.judge_model, args.judge_passes, args.judge_max_tokens, args.prices,
+                          args.retest_fraction)
         out.mkdir(parents=True, exist_ok=True)
         (out / "judge_plan.json").write_text(json.dumps(plan, indent=1), encoding="utf-8")
         print(json.dumps(plan, indent=1))
@@ -407,7 +420,7 @@ def main(argv: list[str] | None = None) -> None:
             backend = gateway_backend(args)
         out.mkdir(parents=True, exist_ok=True)
         judged = run_judge(scenarios, messages, backend, args.judge_model, args.judge_passes,
-                           args.judge_max_tokens, args.judge_workers, out)
+                           args.judge_max_tokens, args.judge_workers, out, args.retest_fraction)
         for (view, p), (rows, inv) in judged.items():
             name = view if p == 0 else f"{view}_pass{p}"
             scores[name], invented[name] = rows, inv
